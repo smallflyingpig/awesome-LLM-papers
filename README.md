@@ -1,7 +1,19 @@
 # awesome-LLM-papers
 经典LLM论文阅读和复现。【常读常新】
 
-## Deep Reinforcement Learning from Human Preferences. 201706. OpenAI. NIPS17.
+# 目录
+[Base Model](#1-基础模型)
+[Alignment](#2-价值对齐)
+[Dataset](#3-数据集)
+[Reasoning](#4-推理增强)
+[Agent](#5-智能体)
+
+
+# 1. 基础模型
+
+# 2. 价值对齐
+
+## 2.1 Deep Reinforcement Learning from Human Preferences. 201706. OpenAI. NIPS17.
 
 <details>
     <summary>点击展开/折叠（论文摘要）</summary>
@@ -41,7 +53,7 @@
 
 </details>
 
-## A General Language Assistant as a Laboratory for Alignment. 202112. Anthropic.
+## 2.2 A General Language Assistant as a Laboratory for Alignment. 202112. Anthropic.
 
 <details>
 
@@ -102,7 +114,7 @@
 
 </details>
 
-## Training a helpful and harmless assistant with reinforcement learning from human feedback. 202204. Anthropic.
+## 2.3 Training a helpful and harmless assistant with reinforcement learning from human feedback. 202204. Anthropic.
 
 <details>
    <summary>点击展开/折叠（论文摘要）</summary>
@@ -178,7 +190,7 @@
     
 </details>
 
-## Constitutional AI: Harmlessness from AI Feedback. 202212. Anthropic.
+## 2.4 Constitutional AI: Harmlessness from AI Feedback. 202212. Anthropic.
 
 <details>
    <summary>点击展开/折叠（论文摘要）</summary>
@@ -252,3 +264,9 @@
 <img width="1498" height="862" alt="image" src="https://github.com/user-attachments/assets/9d74e6ea-21ca-4ef9-9282-f9726469bcd3" />
 
 </details>
+
+# 3. 数据集
+
+# 4. 推理增强
+
+# 5. 智能体
