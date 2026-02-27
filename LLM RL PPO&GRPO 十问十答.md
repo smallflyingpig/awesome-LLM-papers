@@ -12,15 +12,19 @@ PPO 的总 Loss 通常由三部分组成：**策略损失（Policy Loss）**、*
 $$L_{PPO} = L_{CLIP} + c_1 L_{VF} + c_2 L_{ENT}$$
 
 *   **策略损失 ($L_{CLIP}$)**：采用剪切（Clip）机制的重要性采样目标。
+*   
     $$L_{CLIP} = - \mathbb{E}_t \left[ \min \left( r_t(\theta) \hat{A}_t, \text{clip}(r_t(\theta), 1-\epsilon, 1+\epsilon) \hat{A}_t \right) \right]$$
-    其中 $r_t(\theta) = \frac{\pi_{\theta}(a_t|s_t)}{\pi_{\theta_{old}}(a_t|s_t)}$ 是新旧策略的概率比，$\hat{A}_t$ 是通过 GAE 计算的优势函数。
+    
+    其中 $r_t(\theta) = \frac{\pi_{\theta}(a_t|s_t)}{\pi_{\theta_{old}}(a_t|s_t)}$ 是新旧策略的概率比， $\hat{A}_t$ 是通过 GAE 计算的优势函数。
     *注：`verl` 还支持 **Dual-clip PPO**，在优势为负且下降过快时增加了一个下界保护。*
 
-*   **价值损失 ($L_{VF}$)**：Critic 网络的均方误差损失，通常也带 Clip。
-    $$L_{VF} = \mathbb{E}_t \left[ \max \left( (V_{\theta}(s_t) - R_t)^2, (\text{clip}(V_{\theta}(s_t), V_{old}(s_t)-\epsilon, V_{old}(s_t)+\epsilon) - R_t)^2 \right) \right]$$
+*   **价值损失 ($L_{VF}$)**：Critic 网络的均方误差损失，通常也带 Clip.
 
-*   **熵正则项 ($L_{ENT}$)**：鼓励模型保持探索。
-    $$L_{ENT} = - \mathbb{E}_t [ H(\pi_{\theta}(\cdot|s_t)) ]$$
+$$ L_{VF} = \mathbb{E}_t \left[ \max \left( (V_{\theta}(s_t) - R_t)^2, (\text{clip}(V_{\theta}(s_t), V_{old}(s_t)-\epsilon, V_{old}(s_t)+\epsilon) - R_t)^2 \right) \right] $$
+    
+*   **熵正则项 ($L_{ENT}$)**：鼓励模型保持探索.
+  
+    $$ L_{ENT} = - \mathbb{E}_t [ H(\pi_{\theta}(\cdot|s_t)) ] $$
 
 
 
@@ -32,12 +36,16 @@ $$L_{GRPO} = L_{CLIP} + \beta L_{KL} + c_2 L_{ENT}$$
 
 *   **策略损失 ($L_{CLIP}$)**：公式形式与 PPO 相同，但**优势函数 $\hat{A}_t$ 的计算方式发生了本质变化**。
     GRPO 针对每个 Prompt 采样一组（Group）回复 $\{O_1, O_2, \dots, O_G\}$，其优势计算为组内得分的归一化：
+    
     $$\hat{A}_i = \frac{r_i - \text{mean}(r_1, \dots, r_G)}{\text{std}(r_1, \dots, r_G)}$$
+    
     这里的 $r_i$ 是第 $i$ 个回复的奖励得分。
 
 *   **KL 损失 ($L_{KL}$)**：在 `verl` 的 GRPO 实现中，KL 散度通常不作为奖励惩罚项，而是直接作为 Loss 的一部分。
+*   
     $$L_{KL} = \mathbb{E} [ KL(\pi_{\theta} || \pi_{ref}) ]$$
-    常用的估计器包括 Schulman 估计器（$k = r - \log r - 1$）等，确保 KL 约束始终为正。
+    
+    常用的估计器包括 Schulman 估计器（ $k = r - \log r - 1$ ）等，确保 KL 约束始终为正。
 
 ---
 
@@ -62,7 +70,7 @@ $$L_{GRPO} = L_{CLIP} + \beta L_{KL} + c_2 L_{ENT}$$
     *   **计算 `values`**：Critic 模型预测每个 Token 状态的预期回报（仅 PPO 需要，用于降低方差）。
     *   **计算 `rewards`**：由 Reward 模型（模型打分）或规则脚本（如编译器检查、数学公式匹配）给出最终得分。
 
-3.  **Advantage（优势计算）**：这是强化学习的核心。PPO 使用 GAE（广义优势估计）结合 Critic 的预测值来计算每个动作的优势；而 GRPO 则通过组内得分的归一化（$\frac{r - \text{mean}}{\text{std}}$）直接得出优势。
+3.  **Advantage（优势计算）**：这是强化学习的核心。PPO 使用 GAE（广义优势估计）结合 Critic 的预测值来计算每个动作的优势；而 GRPO 则通过组内得分的归一化（ $\frac{r - \text{mean}}{\text{std}}$ ）直接得出优势。
 
 4.  **Update（更新）**：利用优势函数计算策略梯度，更新 Actor 参数。PPO 还会同步更新 Critic 模型以使其预测更准。
 
@@ -93,7 +101,7 @@ $$KL_t = \log \pi_{\theta}(a_t|s_t) - \log \pi_{\text{ref}}(a_t|s_t)$$
 
 ## 五、 为什么 Schulman KL 估计器是非负的？
 
-为了防止训练崩溃，常用 Schulman 估计器：$k = r - \log r - 1$（其中 $r = \pi_{\theta}/\pi_{\text{ref}}$）。
+为了防止训练崩溃，常用 Schulman 估计器： $k=r-\log r-1$ （其中 $r = \pi_{\theta}/\pi_{\text{ref}}$ ）。
 
 从数学上看，函数 $f(r) = r - \log r - 1$ 在 $r=1$ 时取得最小值 0。由于其二阶导数 $f''(r) = 1/r^2 > 0$，该函数是严格凸的。这意味着**无论当前模型概率是比参考模型大还是小，惩罚项永远 $\ge 0$**。这消除了“负 KL”现象（即模型因为偏离参考模型反而获得奖励），确保了 KL 始终起到约束作用。
 
@@ -122,7 +130,7 @@ GAE（Generalized Advantage Estimation）通过平衡偏差和方差来优化 PP
 
 $$Loss = - \frac{1}{G} \sum_{i=1}^{G} \sum_{t=1}^{T} \text{ratio}_{i,t} \cdot A_i$$
 
-其中 $\text{ratio}_{i,t}$ 是第 $i$ 个回复在第 $t$ 个 Token 处的概率比率。这意味着，如果整个回复拿了高分（$A_i > 0$），Loss 会促使模型提高该回复中**每一个 Token** 的出现概率。这种机制在海量数据下，通过统计平均能够自动识别出哪些 Token 是导致高分的关键。
+其中 $\text{ratio}_{i,t}$ 是第 $i$ 个回复在第 $t$ 个 Token 处的概率比率。这意味着，如果整个回复拿了高分（ $A_i > 0$ ），Loss 会促使模型提高该回复中**每一个 Token** 的出现概率。这种机制在海量数据下，通过统计平均能够自动识别出哪些 Token 是导致高分的关键。
 
 ## 九、 计算 Loss 时的“Old 策略”到底是谁？
 
@@ -200,7 +208,41 @@ $$Loss = - \frac{1}{G} \sum_{i=1}^{G} \sum_{t=1}^{T} \text{ratio}_{i,t} \cdot A_
 | **超标且变坏** | 原始损失 > 剪切损失 | **选原始损失** | 保持惩罚，把你拉回来 |
 
 `max` 确保了模型在“变好”时受到限制（不准贪功冒进），在“变坏”时受到全额惩罚（必须改邪归正）。
+
 ---
+
+## 十二、为什么DeepSeek R1的GRPO的clip ratio能给到10，而PPO一般是0.2
+DeepSeek-R1中GRPO算法将clip ratio设置为10，而传统PPO常用0.2，核心原因是**算法设计差异、训练目标不同以及配套约束机制的互补**，具体可从以下三方面详细解析：
+
+### 一、算法本质差异：GRPO与传统PPO的clip逻辑不同
+传统PPO的clip ratio（通常取0.1~0.2）核心目的是**限制策略更新幅度**，避免因单次更新过大导致训练不稳定。其核心逻辑是：通过将策略比率 $\frac{\pi_{\theta}(a|s)}{\pi_{\theta_{old}}(a|s)}$ 裁剪在 $[1-\varepsilon, 1+\varepsilon]$ 范围内，防止参数更新时偏离原始策略过远，进而避免价值函数拟合误差引发的训练震荡。但这一设计会牺牲策略探索的灵活性，尤其不利于需要复杂推理路径的任务。
+
+而DeepSeek-R1采用的**GRPO（Group Relative Policy Optimization）** 算法，对clip机制的依赖显著降低：
+1. **优势计算方式不同**：GRPO不依赖价值模型，而是通过“组内相对优势”计算（ $A_i=\frac{r_i-mean(\{r_1,...,r_G\})}{std(\{r_1,...,r_G\})}$ ），优势值已被标准化，天然降低了极端值对更新的影响，无需通过小clip ratio限制幅度；
+2. **KL约束独立且更强**：GRPO直接在损失函数中加入KL散度项( $-\beta \mathbb{D}_{KL}(\pi_{\theta}\vert \pi_{ref})$ )，通过定期更新参考模型 $\pi_{ref}$ （每400步），稳定策略更新方向。这种“独立KL约束”替代了部分clip的稳定作用，允许clip ratio放大；
+3. **组采样降低方差**：GRPO对每个问题采样多组输出（如16个），通过组内竞争筛选最优策略，样本多样性降低了单一极端更新的风险，为更大的clip ratio提供了安全边界。
+
+### 二、训练目标适配：长链推理需要更大的策略探索空间
+传统PPO常用于对齐类任务（如对话生成、指令跟随），目标是在人类偏好范围内优化输出，无需大幅探索新策略，小clip ratio可保证输出一致性。而DeepSeek-R1的核心目标是**激发模型的长链推理能力**，需要模型自主探索非人类标注的推理路径（如自我反思、多路径验证），具体需求如下：
+1. **推理路径多样性需求**：数学、编码等复杂任务需要模型尝试不同推理逻辑，过大的clip限制会导致模型陷入局部最优（如重复单一推理模式），而clip ratio=10几乎不限制策略比率的更新幅度，允许模型探索更长、更灵活的推理链；
+2. **响应长度动态扩展**：训练中模型需要从短响应（32k tokens）逐步扩展到长响应（65k tokens），小clip ratio会隐含惩罚长序列生成（传统PPO的per-token KL penalty会累积惩罚长输出），而GRPO的KL约束不依赖token级惩罚，配合大clip ratio可支持推理长度的自然增长；
+3. **无SFT初始化的探索需求**：DeepSeek-R1-Zero跳过了SFT阶段，直接基于基座模型进行RL训练，需要更大的策略更新自由度来突破原始模型的能力边界，大clip ratio能加速推理模式的涌现（如训练中出现的“自我反思”“aha moment”等行为）。
+
+### 三、配套机制互补：避免大clip ratio导致的训练失控
+GRPO设置clip ratio=10并未引发训练不稳定，关键在于其配套约束机制形成了互补：
+1. **语言一致性奖励兜底**：训练中引入语言一致性奖励（ $Reward_{language}=\frac{Num(Words_{target})}{Num(Words)}$ ），约束模型输出的语言统一性，避免因策略过度探索导致语言混合（如中英混杂）等问题；
+2. **规则化奖励信号**：采用规则化奖励（准确率奖励+格式奖励），而非模糊的人类偏好奖励，奖励信号的可靠性降低了“策略投机”风险，即使clip ratio较大，模型也会聚焦于“正确推理”而非钻奖励漏洞；
+3. **小批量、单轮内迭代**：每个rollout生成的8192个输出被随机拆分为16个mini-batch，仅训练1个内迭代 epoch，减少了参数更新的累积误差，避免大clip ratio下的误差放大。
+
+### 总结：核心逻辑对比
+| 维度                | 传统PPO（clip=0.2）                | GRPO（clip=10）                      |
+|---------------------|------------------------------------|--------------------------------------|
+| 核心目标            | 稳定对齐人类偏好，限制策略偏离      | 激发长链推理，探索最优推理路径        |
+| 优势计算            | 依赖价值模型（GAE），易受误差影响   | 组内相对优势，标准化后更稳健          |
+| 稳定机制            | 依赖clip限制更新幅度                | 依赖KL约束+组采样+定期更新参考模型    |
+| 适用场景            | 短输出、对齐类任务（对话、指令跟随） | 长输出、推理类任务（数学、编码、STEM）|
+
+简言之，传统PPO的小clip ratio是“以限制换稳定”，而GRPO通过算法优化和配套机制，实现了“大clip换探索+独立约束保稳定”的平衡，最终适配了长链推理任务对策略灵活性的需求。
 
 ### 结语
 
