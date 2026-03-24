@@ -341,15 +341,150 @@
 
 </details>
 
+## 2.6 Direct Preference Optimization: Your Language Model is Secretly a Reward Model. NeurIPS 2023. Stanford/Berkeley.
+
+<details>
+    <summary>点击展开/折叠（论文摘要）</summary>
+
+## 研究背景
+传统 RLHF（SFT → 奖励模型训练 → PPO）流程复杂、训练不稳定、计算开销大。
+
+## 核心洞察
+**奖励函数可以用最优策略和参考策略的对数比值表示**，从而绕过显式奖励模型训练。
+
+## DPO 损失函数
+$$\mathcal{L}_{DPO} = -\mathbb{E} \left[ \log \sigma \left( \beta \log \frac{\pi_\theta(y_w|x)}{\pi_{ref}(y_w|x)} - \beta \log \frac{\pi_\theta(y_l|x)}{\pi_{ref}(y_l|x)} \right) \right]$$
+
+## DPO vs PPO
+
+| 方面 | PPO | DPO |
+|------|-----|-----|
+| 奖励模型 | 需要 | 不需要 |
+| 价值模型 | 需要 | 不需要 |
+| 训练稳定性 | 需精细调参 | 相对稳定 |
+| 计算开销 | 高 | 低 |
+
+## 核心贡献
+1. 首次实现不依赖奖励模型的直接偏好优化
+2. 将 RLHF 三阶段简化为两阶段
+3. 实验验证与 PPO 效果相当甚至更好
+
+## 关键参数
+- **$\beta$**：温度参数，控制 KL 约束强度，典型值 0.1-0.5
+- **SFT 初始化**：需要从好的 SFT 模型开始
+
+</details>
+
 # 3. 数据集
 
 # 4. 推理增强
 
 # 5. 智能体
 
+## 5.1 TERMINALBENCH: A Benchmark for End-to-End Evaluation of LLM Agents on Terminal Tasks. 2026. CMU/USC/AI2.
+
+<details>
+    <summary>点击展开/折叠（论文摘要）</summary>
+
+## 研究背景
+大语言模型越来越多地被用作自主智能体执行复杂任务。终端（Terminal）是软件开发和系统管理中最基础的工具之一。
+
+## 核心问题
+1. **缺乏真实终端环境** - 现有基准主要评估代码生成，而非终端操作
+2. **评估环境简化** - 无法反映真实终端的复杂性
+3. **缺乏端到端评估** - 缺乏从自然语言任务到终端命令执行的完整流程
+
+## 核心贡献
+1. **提出 TERMINALBENCH** - 首个大规模端到端评估 LLM 终端操作能力的基准
+2. **真实终端环境** - 基于 Docker 的真实 Linux 环境
+3. **多维度任务** - 文件操作、代码编译、系统配置、网络请求等
+4. **多维度评估** - 任务完成率、命令效率、错误恢复率
+
+## 主要发现
+| 任务类型 | 表现 |
+|----------|------|
+| 简单任务（文件操作） | 完成率较高 |
+| 复杂任务（多步骤） | 完成率显著下降 |
+| 错误处理 | 普遍不足，易陷入循环 |
+
+</details>
+
 # 6. 优化方法
 
-## 6.1 Group Sequence Policy Optimization. 202507. Qwen.
+## 6.1 LoRA: Low-Rank Adaptation of Large Language Models. ICLR 2022. Microsoft.
+
+<details>
+    <summary>点击展开/折叠（论文摘要）</summary>
+
+## 研究背景
+大模型全量微调成本极高（GPT-3 175B），现有方案（Adapter引入推理延迟，Prefix Tuning占用序列长度）存在明显缺陷。
+
+## 核心方法
+**LoRA（Low-Rank Adaptation）**：冻结预训练权重，注入低秩分解矩阵 $W = W_0 + BA$
+- B ∈ ℝ^(d×r)，A ∈ ℝ^(r×k)，r ≪ min(d,k)
+- 初始化：A随机高斯，B为零（保证训练开始ΔW=0）
+- 输出缩放因子 α/r 减少调参
+
+## 核心优势
+- **参数量减少10,000倍**（GPT-3: 175B → 4.7M）
+- **显存降低3倍**（1.2TB → 350GB）
+- **训练加速25%**（无需计算冻结参数梯度）
+- **零推理延迟**（权重可合并）
+
+## 关键发现
+1. **r=1即可工作**：适应矩阵ΔW具有极低的"内在秩"
+2. **Wq+Wv最佳**：同时适应Query和Value效果最好
+3. **ΔW放大W中被忽视的特征**：不重复top方向，而是放大未强调的方向
+
+## 实验结果
+| 模型 | 方法 | 参数量 | GLUE平均 |
+|------|------|--------|---------|
+| RoBERTa large | Fine-Tune | 355M | 88.9 |
+| RoBERTa large | LoRA | 0.8M | **89.0** |
+| GPT-3 175B | Fine-Tune | 175B | WikiSQL: 73.8 |
+| GPT-3 175B | LoRA | 4.7M | WikiSQL: **73.4** |
+
+## 局限性
+- 批量处理不同任务受限（若权重已合并）
+- 极端任务可能需要更大秩r
+
+</details>
+
+## 6.2 LongLoRA: Efficient Fine-tuning of Long-Context Large Language Models. 202309. CUHK/MIT/NVIDIA.
+
+<details>
+    <summary>点击展开/折叠（论文摘要）</summary>
+
+## 研究背景
+随着大语言模型的发展，长上下文能力变得越来越重要。然而扩展上下文窗口需要对位置编码进行全量微调，计算开销巨大；标准LoRA在扩展上下文长度时性能下降明显。
+
+## 核心方法
+**LongLoRA** 提出一种高效的长上下文微调方法：
+1. **$S^2$-Attn（Shift Short Attention）**：将长序列注意力分解为短序列注意力，通过shift操作实现跨组信息流动
+2. **LoRA扩展**：除Q、V投影外，同时微调embedding和norm层
+3. **训练-推理分离**：训练时使用稀疏注意力，推理时使用完整注意力
+
+## 关键创新
+- 复杂度从O(L²)降低到O(L²/g)
+- 通过多层shift堆叠实现全局信息传播
+- 无需额外适配即可切换训练/推理模式
+
+## 主要结果
+| 模型 | 扩展长度 | LongLoRA PPL | 标准LoRA PPL |
+|------|---------|-------------|-------------|
+| LLaMA2 7B | 100k | **4.97** | - |
+| LLaMA2 7B | 64k | **5.16** | 8.74 |
+| LLaMA2 13B | 64k | **4.70** | 6.42 |
+
+Passkey检索任务在100k长度下达96%准确率，GPU内存降低约5倍。
+
+## 局限性
+- 推理阶段仍需完整注意力计算
+- 极长距离依赖可能有信息损失
+
+</details>
+
+## 6.3 Group Sequence Policy Optimization. 202507. Qwen.
 
 <details>
    <summary>点击展开/折叠（论文摘要）</summary>
