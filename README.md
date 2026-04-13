@@ -7,7 +7,8 @@
 [Dataset](#3-数据集)
 [Reasoning](#4-推理增强)
 [Agent](#5-智能体)
-[Optimization](#6-优化方法)
+[Infrastructure](#6-系统与基础设施)
+[Optimization](#7-优化方法)
 
 # 1. 基础模型
 
@@ -322,7 +323,10 @@
 </details>
 
 
-## 2.5 HIGH-DIMENSIONAL CONTINUOUS CONTROL USING GENERALIZED ADVANTAGE ESTIMATION. ICLR 2016. UCB.
+## 2.5 DPO Loss 公式完整解读。
+[详细笔记](notes/202604-DPO LOSS公式完整解读.md)
+
+## 2.6 HIGH-DIMENSIONAL CONTINUOUS CONTROL USING GENERALIZED ADVANTAGE ESTIMATION. ICLR 2016. UCB.
 
 <details>
    <summary>点击展开/折叠（论文摘要）</summary>
@@ -341,7 +345,8 @@
 
 </details>
 
-## 2.6 Direct Preference Optimization: Your Language Model is Secretly a Reward Model. NeurIPS 2023. Stanford/Berkeley.
+## 2.7 Direct Preference Optimization: Your Language Model is Secretly a Reward Model. NeurIPS 2023. Stanford/Berkeley.
+[论文笔记](papers/202305-DPO-Rafailov-Stanford.md)
 
 <details>
     <summary>点击展开/折叠（论文摘要）</summary>
@@ -377,11 +382,25 @@ $$\mathcal{L}_{DPO} = -\mathbb{E} \left[ \log \sigma \left( \beta \log \frac{\pi
 
 # 3. 数据集
 
+## 3.1 Code 预训练数据优化：最新进展与关键文献。 202504.
+[详细笔记](notes/202604-CodePretrainData-Survey.md)
+
+涵盖业界 Code 模型全景（StarCoder2 / DeepSeek-Coder-V2 / OpenCoder / Qwen2.5-Coder / CodeGeeX4 / Llama 4 / Kimi K2）、数据管线（去重/过滤/混合）、Repo 级长文 Midtrain、Scaling Laws、必读论文清单（18 篇）。
+
 # 4. 推理增强
+
+## 4.1 World Model：过去、现在和未来。
+[详细笔记](notes/202604-World Model：过去、现在和未来.md)
+
+梳理 World Model 核心问题、主流技术路线（LeCun JEPA、Sora、Genie）、里程碑工作及未来方向。
 
 # 5. 智能体
 
-## 5.1 TERMINALBENCH: A Benchmark for End-to-End Evaluation of LLM Agents on Terminal Tasks. 2026. CMU/USC/AI2.
+## 5.1 Scaling Managed Agents: Decoupling the Brain from the Hands. 202602. Anthropic.
+[论文笔记](papers/202602-ManagedAgents-Martin-Anthropic.md) | [Agent 架构全景解读](notes/202604-Anthropic-Agent架构全景解读.md)
+
+## 5.2 TERMINALBENCH: A Benchmark for End-to-End Evaluation of LLM Agents on Terminal Tasks. 2026. CMU/USC/AI2.
+[论文笔记](papers/202603-TerminalBench-Berkeley.md)
 
 <details>
     <summary>点击展开/折叠（论文摘要）</summary>
@@ -409,9 +428,32 @@ $$\mathcal{L}_{DPO} = -\mathbb{E} \left[ \log \sigma \left( \beta \log \frac{\pi
 
 </details>
 
-# 6. 优化方法
+# 6. 系统与基础设施
 
-## 6.1 LoRA: Low-Rank Adaptation of Large Language Models. ICLR 2022. Microsoft.
+## 6.1 Quantifying Infrastructure Noise in Agentic Coding Evals. 202602. Anthropic.
+[论文笔记](papers/202602-InfraNoise-Segato-Anthropic.md)
+
+<details>
+    <summary>点击展开/折叠（论文摘要）</summary>
+
+Anthropic 量化了基础设施配置对 Agent 编码基准评估的影响：资源配置差异可导致分数偏移高达 **6 个百分点**，常超过排行榜上顶级模型间的差距。
+
+## 核心发现
+1. **严格执行资源限制的陷阱**：将规格同时设为保底和上限，瞬态峰值导致 OOM Kill，1x 配置下基础设施错误率达 5.8%
+2. **3 倍规格是临界点**：之下额外资源修复可靠性（p = 0.40），之上改变评估本质（成功率跃升近 4 个百分点）
+3. **SWE-bench 交叉验证**：5x vs 1x 仅差 1.54 个百分点，资源密集度较低但资源分配仍非中性
+
+## 建议
+- 分别指定保证分配和终止阈值，而非单一固定值
+- 实证校准两者间距直到两端分数落在噪声范围内
+- 将资源配置视为与 prompt 格式、采样温度同等的一级实验变量
+- **关键阈值**：排行榜上低于 3 个百分点的差距值得怀疑，直到评估配置被文档化并对齐
+
+</details>
+
+# 7. 优化方法
+
+## 7.1 LoRA: Low-Rank Adaptation of Large Language Models. ICLR 2022. Microsoft.
 
 <details>
     <summary>点击展开/折叠（论文摘要）</summary>
@@ -450,7 +492,7 @@ $$\mathcal{L}_{DPO} = -\mathbb{E} \left[ \log \sigma \left( \beta \log \frac{\pi
 
 </details>
 
-## 6.2 LongLoRA: Efficient Fine-tuning of Long-Context Large Language Models. 202309. CUHK/MIT/NVIDIA.
+## 7.2 LongLoRA: Efficient Fine-tuning of Long-Context Large Language Models. 202309. CUHK/MIT/NVIDIA.
 
 <details>
     <summary>点击展开/折叠（论文摘要）</summary>
@@ -484,7 +526,8 @@ Passkey检索任务在100k长度下达96%准确率，GPU内存降低约5倍。
 
 </details>
 
-## 6.3 Group Sequence Policy Optimization. 202507. Qwen.
+## 7.3 Group Sequence Policy Optimization. 202507. Qwen.
+[大模型强化学习 PPO 与 GRPO 十问十答](notes/202604-LLM RL PPO&GRPO 十问十答.md)
 
 <details>
    <summary>点击展开/折叠（论文摘要）</summary>
