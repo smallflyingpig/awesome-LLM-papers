@@ -79,12 +79,13 @@
 \newcommand{\term}[1]{\textbf{#1}}
 \newsavebox{\fitcodebox}
 
-\newenvironment{keybox}[1][]
-  {\begin{quote}\setlength{\fboxsep}{6pt}\noindent\colorbox{softblue}{\parbox{0.92\linewidth}{\color{deepblue}\textbf{#1}}}\par\smallskip\color{black}}
-  {\smallskip\color{deepblue}\hrule\end{quote}}
-\newenvironment{warnbox}[1][]
-  {\begin{quote}\color{rulegray}\hrule\smallskip\noindent\color{black}\textbf{#1}\par\smallskip}
-  {\smallskip\color{rulegray}\hrule\end{quote}}
+\newcommand{\noteBox}[2]{%
+  \begin{center}
+  \setlength{\fboxsep}{7pt}%
+  \setlength{\fboxrule}{0.4pt}%
+  \fcolorbox{teal}{softblue}{\parbox{0.92\linewidth}{%
+    \textbf{\color{deepblue}#1：}\color{black}#2}}
+  \end{center}}
 
 \begin{document}
 
@@ -112,9 +113,7 @@ LLM scaling law 不是“参数越大、能力越强”的口号，而是在固�
 \noindent\textbf{关键词：}大语言模型；Scaling Law；Compute-Optimal；数据扩展；MoE；推理时计算；代码预训练
 \end{abstract}
 
-\begin{keybox}[核心判断]
-Scaling law 是\term{局部经验模型、受控实验方法与资源决策工具}的组合。它最擅长回答“在相同 recipe 下，扩大多少参数或 token 能降低多少 loss”，而不是回答“某种智能何时必然出现”。
-\end{keybox}
+\noteBox{核心判断}{Scaling law 是\term{局部经验模型、受控实验方法与资源决策工具}的组合。它最擅长回答“在相同 recipe 下，扩大多少参数或 token 能降低多少 loss”，而不是回答“某种智能何时必然出现”。}
 
 \clearpage
 \pdfbookmark[0]{目录}{toc}
@@ -148,9 +147,7 @@ Scaling law 是\term{局部经验模型、受控实验方法与资源决策工�
 \end{tabularx}
 \end{table}
 
-\begin{warnbox}[证据边界]
-公开模型尺寸表不是一条 universal scaling curve。不同 tokenizer、数据质量、代码比例、架构、上下文长度和 post-training 都是强混杂变量；跨家族散点最多说明工程趋势，不能识别参数量的因果效应。
-\end{warnbox}
+\noteBox{关键证据边界}{公开模型尺寸表不是一条 universal scaling curve。不同 tokenizer、数据质量、代码比例、架构、上下文长度和 post-training 都是强混杂变量；跨家族散点最多说明工程趋势，不能识别参数量的因果效应。}
 
 \section{问题起源：从 Learning Curve 到语言模型幂律}
 
