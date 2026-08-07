@@ -1,0 +1,100 @@
+\section{全双工连续推理的形式化}
+
+轮次式 LLM 只需保证 token 序列上的因果性；full-duplex model 还必须保证每个 audio chunk 的排队与计算时间满足 $Q_t+C_t\leq\Delta$，否则即使语义正确，也会因错过 playout deadline 而产生卡顿。因而 continuous inference 的状态不仅包含历史语义，还必须同步用户音频、助手自身输出、播放进度、工具事件和安全信号，并让低延迟 interaction path 与高成本 cognition path 在不同时间尺度上并行推进。
+
+\subsection{从 token 序列到受 wall-clock 约束的双流过程}
+
+下述形式化以标准 Transformer 自回归建模为起点\cite{vaswani2017attention}。
+
+普通自回归 LLM 建模 $p(y_n\mid x,y_{<n})$，输入 $x$ 在解码开始前已经固定。全双工语音则不同：助手生成语音时，新的用户输入仍在持续到达。将 wall-clock 离散为长度为 $\Delta$ 的 audio chunk，令 $u_t$ 表示第 $t$ 个用户 audio chunk，$a_t$ 表示助手输出，$z_t$ 表示内部交互动作，$m_t$ 表示持久状态，则系统需要在每个 playout deadline 之前完成以下计算：
+\begin{align}
+m_t &= f_\theta(m_{t-1},u_t,\tilde a_{t-d:t-1},e_t),\\
+(a_t,z_t) &\sim p_\theta(\cdot\mid m_t),\qquad
+z_t\in\{\texttt{listen,speak,pause,stop,backchannel,delegate,tool}\}.
+\end{align}
+$\tilde a$ 表示系统自身的回放参考，或经过声学回声消除后的自身输出；$e_t$ 表示工具结果、网络状态和安全信号。这里最重要的约束不是概率公式本身，而是 $C_t+Q_t\leq\Delta$：单个 audio chunk 的计算时间 $C_t$ 与排队时间 $Q_t$ 之和必须小于 playout deadline。偶发超时会造成 audio underrun，连续超时则会表现为机械式停顿。
+
+全双工至少包含四层含义：（1）传输层可同时上行和下行；（2）模型在发声时仍持续编码用户输入；（3）策略层能够处理语音重叠、简短应答和用户插话；（4）会话层在后台任务执行期间仍保持可交互。仅具备双向 WebSocket 连接并不能称为全双工模型；如果系统在处理复杂任务时冻结交互，即使具备前三层能力，也不等于 GPT-Live 所强调的连续智能体。
+
+\subsection{状态、因果性与回声}
+
+因果系统只能使用 $u_{\le t}$，但可通过有限 look-ahead $L$ 换取更稳健的语音表征。算法延迟下界近似为
+\begin{equation}
+T_{\mathrm{algo}}=T_{\mathrm{chunk}}+T_{\mathrm{lookahead}}+T_{\mathrm{codec}}+T_{\mathrm{decode}}.
+\end{equation}
+减小 $\Delta$ 会提高决策频率，却增加 token rate、kernel launch 与调度压力。以 80--160 ms 为时间格的公开系统体现了典型折中：足够快以响应打断，又能在一个格内积累可辨别的声学证据\cite{defossez2024moshi,zhang2026duplexsla}。
+
+模型还必须区分“用户正在说”与“扬声器声音被麦克风重新采集”。传统 AEC\footnote{Acoustic Echo Cancellation，声学回声消除。} 在波形域消除已知播放参考；模型侧还可显式接收 assistant history、自输出 token 或 echo flag。若只用单通道混合音频训练，模型可能把自己的声音误当用户指令。SALMONN-omni 将 echo cancellation 列为全双工核心场景\cite{yu2025salmonnomni}，说明评估必须覆盖残余回声、双讲与不同声学路径，而不能只在干净的分离声道上测试。
+
+\subsection{双时间尺度控制}
+
+自然对话的控制延迟与任务推理延迟并不相同。快速环 $\pi_f$ 每 $\Delta$ 毫秒运行，负责保持接触、决定是否让出话权；慢速环 $\pi_s$ 可能运行数秒，负责搜索、规划或调用工具：
+\begin{equation}
+\pi_f:(u_t,m_{t-1})\mapsto(a_t,z_t),\qquad
+\pi_s:(q,M)\mapsto r,quad r\xrightarrow{\mathrm{event}}m_{t+k}.
+\end{equation}
+异步委派的难点在于如何将结果重新注入当前对话：结果可能已经过时，任务可能被用户取消，也可能与交互层先前的表述发生冲突。因此，事件至少应包含 \texttt{task\_id}、上下文版本、创建时间、取消状态和来源信息；交互层收到结果后还应执行相关性判断，而不是无条件朗读。
+
+\section{公开模型路线：组件与设计轴}
+
+近年的公开模型虽然实现路径不同，却逐渐收敛到“共享时间轴、用户与助手双流、持续状态更新”这一基本结构。真正影响系统行为的是三组权衡：codec token 的生成统一性与高 token rate，channel fusion 的语义耦合能力与 overlap 干扰，以及 silence/control/action token 的控制精度与主干负担；这些设计轴可以解释 Moshi、SyncLLM、LSLM、Neural-FSM 和 DuplexSLA 的差异，也构成理解 GPT-Live 的候选机制空间。
+
+\subsection{音频表示：连续特征、semantic token 与 codec token}
+
+端到端语音 LLM 通常先把 16/24 kHz 波形降采样为低频表示。SoundStream 与 EnCodec 使用卷积编码器、残差向量量化（RVQ）和生成式解码器，将波形压缩为多 codebook 离散 token\cite{zeghidour2021soundstream,defossez2022encodec}。若帧率为 $f$、codebook 数为 $K$、每本词表大小为 $V_k$，原始离散码率为
+\begin{equation}
+R=f\sum_{k=1}^{K}\log_2V_k\quad\text{bit/s}.
+\end{equation}
+高层 codebook 往往承载较粗的语义和韵律，后续 codebook 补充声学细节。AudioLM 进一步分离 semantic token 与 acoustic token，以较低频语义保证长期一致性，以 codec code 重建音质\cite{borsos2022audiolm}。
+
+VITA-Audio 用 multiple cross-modal token prediction 在一次 forward pass 中生成多个 audio token，作者报告 7B 规模下获得 3--5 倍 inference speedup\cite{long2025vitaaudio}，说明 parallel acoustic decoding 是降低 time-to-first-audio 的重要方向。
+
+Codec-token 路线可让 next-token prediction 同时覆盖理解与生成，但 token rate 很高。假设每秒 12.5 frame、8 个 codebook，即每秒 100 个 audio token；若双方流同时存在，backbone throughput 和 KV cache\footnote{Key-Value cache，Transformer 在增量解码时缓存历史 token 的 Key 和 Value 表示，以避免重复计算。} 增长会显著高于文本聊天。典型优化包括 delay pattern、hierarchical depth decoder、multi-token prediction 和 semantic/acoustic 分层。Moshi 用 Temporal Transformer 建模时间、Depth Transformer 在同一 frame 内展开多 codebook，并用时间对齐文本 Inner Monologue 改善语言质量\cite{defossez2024moshi}。
+
+另一条路线不把 codec id 注入 LLM 词表。LSLM 以 streaming SSL\footnote{Self-Supervised Learning，自监督学习；此处指用无标注语音学习连续声学表示。} encoder 提供连续听觉特征、token-based TTS 生成语音；SALMONN-omni 则强调 codec-free token space 与 dynamic thinking\cite{ma2025lslm,yu2025salmonnomni}。这种做法可降低主干需要学习的声学熵，却要求外部 speech decoder 在低延迟和高保真之间取得平衡。两类路线本质上是“主干承担多少声学细节”的分工差异。
+
+近期综述将相关方法概括为“工程式同步”和“学习式同步”，也印证了模型端与系统端需要并行演进\cite{chen2025survey}。
+
+\subsection{双方流如何进入主干}
+
+\paragraph{序列展平。}
+SyncLLM 把真实时间切成 chunk，以同步标记把用户和助手事件序列化；OmniFlatten 用统一 flatten operation 覆盖模态对齐、半双工与全双工训练\cite{veluri2024syncllm,zhang2024omniflatten}。优点是复用标准 decoder-only LLM 和 next-token loss，缺点是序列次序可能人为打破“同一时刻”的对称性，且 token rate 膨胀。
+
+\paragraph{平行流与多码本。}
+Moshi 同时建模 user 与 assistant audio stream，dGSLM 更早使用双塔 Transformer 与 cross-attention，在两个声道并行生成语音、笑声和轮次动态\cite{nguyen2022dgslm,defossez2024moshi}。平行表示最贴近物理过程，但 batch、cache 与 loss mask 都需认识二维的时间$\times$通道结构。
+
+\paragraph{Fusion 与 cross-attention。}
+LSLM 比较了 early、middle 和 late fusion。2026 年的一项控制实验进一步表明，channel fusion 能够建立更强的语义联系，但在输入 overlap 时也更容易干扰正在生成的 context；把 user stream 作为 external memory、通过 cross-attention 读取则更加稳健，但问答能力相对偏弱\cite{ma2025lslm,lu2026routing}。因此，架构评估不能只看静态 spoken QA，还必须考察被打断后的 semantic recovery。
+
+\subsection{交互动作如何表达}
+
+最简单的做法是把静默也视为一种输出：如果模型在某个时间格生成 silence token，就表示它选择“继续听”。SyncLLM 和 Moshi 可以从用户、助手两条流的联合分布中隐式学习重叠与停顿。Neural-FSM 则让 LLM 显式输出 control token，驱动一个双状态 FSM\footnote{Finite-State Machine，有限状态机。}，决定开始回答、继续等待或接受打断；论文报告称，在仿真评测中，其平均响应延迟较半双工系统降低超过三倍，超过一半的交互能在 500 ms 内响应\cite{wang2024neuralfsm}。显式控制更便于监督和审计，但过于粗粒度的状态机也可能限制交互的自然程度。
+
+DuplexSLA 在共享的 160 ms 时间线上，联合解码助手音频与限速的文本动作通道，使规划和工具调用可以与语音输出并行进行\cite{zhang2026duplexsla}。这代表一种更一般的语音--语言--动作（Speech--Language--Action, SLA）建模方式：音频负责低带宽的社交反馈，动作通道负责高精度的结构化控制。GPT-Live 官方只确认系统能够持续决定何时调用工具或发起异步委派；内部是否存在原生动作头，目前尚未披露。
+
+\begin{table}[H]
+\centering\scriptsize
+\setlength{\tabcolsep}{3pt}
+\caption{全双工公开路线的核心设计轴。表中“GPT-Live”仅列官方公开属性，问号表示未披露。}
+\begin{tabularx}{\textwidth}{lXXXXX}
+\toprule
+系统 & 输入组织 & 语音输出 & 交互控制 & 深层推理 & 主要特征 \\
+\midrule
+Moshi & 双平行音频流 & RVQ codec & 隐式时序 & 单主干 & Inner Monologue，约 200 ms 实测 \\
+SyncLLM & 时间 chunk 展平 & HuBERT/语音单元 & sync token & 单主干 & 真实时钟同步 \\
+Neural-FSM & 序列化感知事件 & 模块化 motor & control token & LLM 内 & 两状态 FSM \\
+LSLM & streaming SSL & token TTS & 融合后预测 & 单主干 & early/middle/late fusion \\
+OmniFlatten & flatten 序列 & speech token & 数据中学习 & 单主干 & 三阶段 post-training \\
+SALMONN-omni & 连续语音特征 & 独立生成模块 & dynamic thinking & 单主干 & codec-free token space \\
+DuplexOmni & 流式音频/视频 & 流式语音 & interaction layer & 异步插件 & 交互--思考解耦 \\
+DuplexSLA & 双流三通道 & 离散音频 & action channel & 同主干动作 & 共享 160 ms 时钟 \\
+GPT-Live & 持续音频 & 持续语音 & 连续决策 & 异步委派 & tokenizer/fusion 未公开 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{与端到端 Omni Model 的本质区别}
+
+两者并非互斥概念。Omni 强调\emph{模态统一}：同一个模型能够理解并生成文本、图像或音频；full-duplex 强调\emph{时间与控制统一}：新输入可以在生成过程中持续到达，模型能够感知 wall-clock，并在语音重叠时维持正确的因果状态。一个模型可以是 Omni 但仍按轮次交互，也可以具备 full-duplex 能力但只处理音频。
+
+GPT-Live 进一步引入\emph{能力解耦}：低延迟交互核心不必承担所有复杂推理。相比让超大 omni model 每 80--160 ms 都完成一次昂贵推理，该方案把“不能错过的帧级决策”和“可以等但需要聪明的任务”分配给不同计算路径。这既是产品体验设计，也是 serving 可行性的核心。

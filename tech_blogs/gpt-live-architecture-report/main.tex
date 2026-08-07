@@ -1,0 +1,110 @@
+\documentclass[UTF8,fontset=none,a4paper,10pt]{ctexart}
+\usepackage[a4paper,left=19mm,right=19mm,top=18mm,bottom=19mm,headheight=14pt]{geometry}
+\usepackage{fontspec}
+\setmainfont{Times New Roman}
+\setsansfont{Arial}
+\setmonofont{Menlo}[Scale=MatchLowercase]
+\setCJKmainfont[ItalicFont={Kaiti SC}]{Songti SC}
+\setCJKsansfont{Heiti SC}
+\setCJKmonofont{Songti SC}
+\usepackage{amsmath,amssymb,booktabs,array,tabularx,longtable,multirow}
+\usepackage{graphicx,xcolor,enumitem,float,caption,subcaption}
+\usepackage{titlesec,fancyhdr,microtype,indentfirst}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,fit,calc,backgrounds,shapes.geometric}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage[numbers,sort&compress]{natbib}
+\usepackage{hyperref}
+\usepackage{bookmark}
+\definecolor{navy}{HTML}{17365D}
+\definecolor{linkblue}{HTML}{2459A6}
+\definecolor{lightblue}{HTML}{EAF1FB}
+\hypersetup{colorlinks=true,linkcolor=linkblue,citecolor=linkblue,urlcolor=linkblue,bookmarksnumbered=true,pdftitle={一文详解 GPT-Live 的技术架构与实现方案},pdfauthor={Jiguo Li},pdfsubject={从端到端 Omni Model 到全双工连续推理系统}}
+\microtypesetup{protrusion=true,expansion=false}
+\linespread{1.13}
+\setlength{\parindent}{2em}
+\setlength{\parskip}{2.5pt}
+\setlength{\abovedisplayskip}{6pt}
+\setlength{\belowdisplayskip}{6pt}
+\setlength{\abovedisplayshortskip}{4pt}
+\setlength{\belowdisplayshortskip}{4pt}
+\setlength{\jot}{3pt}
+\emergencystretch=2em
+\setlength{\textfloatsep}{8pt plus 2pt minus 2pt}
+\setlength{\floatsep}{7pt plus 2pt minus 2pt}
+\setlength{\intextsep}{7pt plus 2pt minus 2pt}
+\setlist[itemize]{leftmargin=1.8em,itemsep=1pt,topsep=2pt,parsep=0pt}
+\setlist[enumerate]{leftmargin=2em,itemsep=1pt,topsep=2pt,parsep=0pt}
+\captionsetup{font=small,labelfont=bf,skip=3pt}
+\titleformat{\section}{\Large\bfseries\color{navy}}{\thesection}{0.7em}{}
+\titleformat{\subsection}{\large\bfseries\color{navy}}{\thesubsection}{0.65em}{}
+\titleformat{\paragraph}[runin]{\normalsize\bfseries}{}{0pt}{}
+\titlespacing*{\section}{0pt}{14pt}{5pt}
+\titlespacing*{\subsection}{0pt}{10pt}{3pt}
+\titlespacing*{\paragraph}{0pt}{0.65ex plus 0.2ex}{0.45em}
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\color{gray}GPT-Live 技术架构与实现方案}
+\fancyhead[R]{\small\color{gray}\leftmark}
+\fancyfoot[C]{\small\thepage}
+\renewcommand{\headrulewidth}{0.3pt}
+\renewcommand{\footrulewidth}{0pt}
+\definecolor{official}{HTML}{1F77B4}
+\definecolor{public}{HTML}{2CA02C}
+\definecolor{hypothesis}{HTML}{D97706}
+\newcommand{\FOne}{\textcolor{official}{\textbf{[F1]}}}
+\newcommand{\FTwo}{\textcolor{public}{\textbf{[F2]}}}
+\newcommand{\Hyp}{\textcolor{hypothesis}{\textbf{[H]}}}
+\newcommand{\model}[1]{\textsf{#1}}
+\newcommand{\ms}{\,\mathrm{ms}}
+\newcommand{\noteBox}[1]{%
+  \begin{center}
+  \fcolorbox{linkblue}{lightblue}{\parbox{0.93\linewidth}{#1}}
+  \end{center}}
+
+\begin{document}
+
+\begin{center}
+  {\zihao{2}\bfseries\color{navy} 一文详解 GPT-Live 的技术架构与实现方案}\par
+  \vspace{4pt}
+  {\zihao{3}\color{navy} 从端到端 Omni Model 到全双工连续推理系统}\par
+  \vspace{10pt}
+  {\normalsize\textbf{Jiguo Li\footnote{本文在 OpenAI Codex 的协助下完成。}}}\par
+  \vspace{2pt}
+  {\small\href{mailto:jiguolee@gmail.com}{jiguolee@gmail.com}}\par
+  \vspace{2pt}
+  {\small 2026 年 8 月}
+\end{center}
+\vspace{5pt}
+\hrule
+
+\begin{abstract}
+本文缘起于 OpenAI 近期发布的一篇 GPT-Live 工程博客。该文首次较系统地披露了这一新一代语音系统如何从轮次式架构转向连续交互，并介绍了 continuous inference、异步委派、有状态实例切换和低时延传输等关键设计，由此引发了笔者对其完整技术架构的兴趣。GPT-Live 将语音助手从“识别一句、思考一次、合成一句”的轮次管线，推进为始终在线的连续控制系统：模型沿统一时间轴持续接收用户音频，在发声的同时保持监听，判断何时暂停或接受打断，并将复杂推理和工具调用异步交给更强的模型。本文结合 OpenAI 官方工程说明、系统卡、Internet Engineering Task Force（IETF）协议草案，以及 2024--2026 年全双工语音模型论文与开源项目，给出一份受公开证据约束的技术重建。核心结论是：GPT-Live 的创新不能只归结为“更强的端到端 speech-to-speech model”，而应理解为四层协同——全双工交互核心、异步认知委派、stateful serving 和低往返时延实时传输。本文进一步形式化 continuous inference，比较 codec token、codec-free、双流融合、cross-attention、finite-state machine control token 与 action channel 等公开路线；分析训练数据、长会话状态、attention cache、上下文压缩、故障切换和 WebRTC/WARP；最后给出可复现的开源实现蓝图、消融实验与多维评测体系。为避免把类比误写成内幕，全文使用 \FOne 官方事实、\FTwo 公开机制和 \Hyp 推断性重建三级证据标签。
+
+\noindent\textbf{关键词：}GPT-Live；全双工语音模型；continuous inference；speech-to-speech；实时系统；WebRTC；stateful serving
+\end{abstract}
+
+\noteBox{\textbf{阅读提要：}GPT-Live 的关键不只是一个端到端 speech-to-speech model，而是 full-duplex interaction core、异步 cognition、stateful serving 与低延迟实时传输的协同。}
+
+\clearpage
+\begingroup
+\small
+\setlength{\parskip}{0pt}
+\linespread{1.02}\selectfont
+\setcounter{tocdepth}{2}
+\tableofcontents
+\endgroup
+\clearpage
+
+\input{sections/01_scope_and_evolution}
+\input{sections/02_formulation_and_models}
+\input{sections/03_training_and_serving}
+\input{sections/04_transport_and_evaluation}
+\input{sections/05_reconstruction_and_blueprint}
+
+{\footnotesize
+\bibliographystyle{unsrtnat}
+\bibliography{references}
+}
+\end{document}

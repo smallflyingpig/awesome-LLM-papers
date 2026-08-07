@@ -1,3 +1,9 @@
+# macOS and editor files
+.DS_Store
+*.bak
+*.swp
+*~
+
 # LaTeX build products
 *.aux
 *.bbl
@@ -29,15 +35,15 @@
 *.toc
 *.vrb
 *.xdv
-
-# Generated directories and editor artifacts
-_build/
-build/
-_minted-*/
 *.pyg
-*.bak
-*.swp
-*~
 
-# Keep publication sources and final deliverables tracked:
+# Generated build and visual-QA directories
+build/
+build-*/
+_build/
+_minted-*/
+rendered/
+tmp/
+
+# Publication sources and final deliverables remain tracked:
 #   *.tex, *.bib, *.sty, *.cls, *.md, *.pdf

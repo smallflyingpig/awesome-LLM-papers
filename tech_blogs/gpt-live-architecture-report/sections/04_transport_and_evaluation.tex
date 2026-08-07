@@ -1,0 +1,76 @@
+\section{实时网络：WebRTC、WARP 与 playout clock}
+
+\subsection{为什么不是“换成 WebSocket 就够了”}
+
+WebRTC 将媒体、NAT\footnote{Network Address Translation，网络地址转换；NAT traversal 指跨越地址转换设备建立端到端连接。} 穿透、拥塞控制、安全和 data channel 组合成浏览器实时通信栈。标准 WebRTC 中，媒体通常经 SRTP\footnote{Secure Real-time Transport Protocol，安全实时传输协议。}，非媒体 data channel 使用 SCTP over DTLS over ICE/UDP\footnote{SCTP：Stream Control Transmission Protocol，流控制传输协议；DTLS：Datagram Transport Layer Security，数据报传输层安全协议；ICE：Interactive Connectivity Establishment，交互式连接建立；UDP：User Datagram Protocol，用户数据报协议。}\cite{alvestrand2021webrtc,jesup2021datachannels}。音频帧与工具事件的可靠性需求不同：晚到的旧音频包通常不值得重传，而工具结果、状态变更需要可靠和有序。将两者都放进一个可靠字节流会产生 head-of-line blocking。
+
+端到端感知延迟可以写为
+\begin{equation}
+T_{e2e}=T_{capture}+T_{uplink}+T_{jitter,in}+T_{model}+T_{downlink}+T_{jitter,out}+T_{playout}.
+\end{equation}
+如果模型侧节省的 20 ms 被 300 ms 的 connection setup 或 jitter buffer 抵消，用户就感知不到这部分优化。反过来，jitter buffer 过小又会在弱网环境下增加缺帧。系统应根据近期 packet loss、RTT\footnote{Round-Trip Time，往返时延，即数据从发送端到接收端再返回所需的时间。} 和 clock drift 动态调整 playout 策略，而不是为全球网络设置同一个固定参数。
+
+SimulTron 的端侧同步语音到语音翻译同样联合设计了因果编码器、可调固定延迟和流式声码器\cite{agranovich2024simultron}，说明评估延迟时必须同时计入模型算法和音频播放路径。
+
+\subsection{从 6 RTT 到 1 RTT 的建连优化}
+
+\FOne OpenAI 将相关 WebRTC 优化统称为 WARP，称媒体与 data channel 建立从 6 个 round trip 降为 1 个，组合 SPED\footnote{STUN Protocol for Embedding DTLS；其中 STUN 为 Session Traversal Utilities for NAT。该草案把 DTLS handshake data 与 acknowledgement 嵌入 STUN Binding 消息。}、DTLS 1.3、SNAP\footnote{SCTP Negotiation Acceleration Protocol，把 SCTP 初始化参数放入 SDP offer/answer，以减少 data channel 建立的串行往返。} 和预协商 data channel\cite{openai2026continuous}。DTLS 1.3 本身使用更短的握手模式\cite{rescorla2022dtls13}；SPED 将 DTLS handshake data/ack 嵌入 STUN Binding Request/Response；SNAP 将 SCTP 初始化参数嵌入 SDP\footnote{Session Description Protocol，会话描述协议。} offer/answer，从而减少 data channel 的串行往返\cite{hancke2026sped,hancke2026snap}。后两者截至本文写作时仍是 Internet-Draft，不能当作稳定 RFC\footnote{Request for Comments，互联网工程与协议领域的标准、规范或信息性文档系列。}。
+
+Instant Connect 更进一步预协商 SDP，使客户端可用单个 UDP packet 启动会话\cite{openai2026continuous}。这要求服务端提前分配或恢复足够的连接状态，也引入防重放、资源滥用和预留过期问题。低 RTT 不是免费午餐：状态预热越激进，空连和攻击流量造成的成本越高。
+
+\subsection{丢包、漂移与音频追赶}
+
+client sampling clock、server generation clock 和 speaker playout clock 并不完全一致。若生成略慢，buffer 逐渐耗尽；若生成略快，buffer 累积导致交互越来越迟。官方文章提到 audio time stretching/catch-up\cite{openai2026continuous}：在小范围内调整 playout rate 或选择性丢弃低价值片段，使延迟回到目标区间。实现时应限制 stretching ratio，并在 voice activity boundary 操作，避免音高和韵律畸变。
+
+弱网测试至少覆盖独立随机丢包与 burst loss、上/下行不对称、RTT 突增、NAT rebinding、Wi-Fi/蜂窝切换、客户端后台恢复及音频设备切换。评价不仅是 packet loss 后的 ASR WER\footnote{Word Error Rate，词错误率，通常按替换、删除和插入错误相对参考词数计算。}，还包括 assistant 是否重复、抢话、忘记用户中途修正，以及工具事件是否与音频状态一致。
+
+\section{评测体系：从模型分数到连续交互体验}
+
+\subsection{四层评测框架}
+
+Full-Duplex-Bench 将核心交互行为拆为停顿处理、简短应答、轮次切换和打断管理\cite{lin2025fullduplexbench}；v2 进一步加入多轮阶段性目标、快慢说话节奏、纠错、实体跟踪与安全任务\cite{lin2026fullduplexbenchv2}。结合线上系统需求，建议从以下四个层面进行评测：
+
+\begin{enumerate}
+  \item \textbf{声学/语义：}ASR WER、spoken QA accuracy、speaker similarity、MOS\footnote{Mean Opinion Score，平均主观意见分，通常由听者评价语音自然度或质量；UTMOS 是自动预测 MOS 的神经网络评估器。}/UTMOS、情绪与韵律遵循、噪声/口音鲁棒性。
+  \item \textbf{交互行为：}起始响应延迟、停顿/重叠分布、简短应答的准确率与召回率、用户插话后的停声延迟、错误打断率，以及恢复后的语义一致性。
+  \item \textbf{智能体任务：}工具调用正确率、参数精确匹配率、委派触发的准确率与召回率、任务完成率、取消指令遵从率、结果时效性和来源信息正确率。
+  \item \textbf{系统服务质量：}connection RTT、首段音频延迟、audio frame deadline-miss ratio、jitter、playout buffer underrun、handoff gap、单 session GPU 显存、每块 GPU 可稳定承载的 session 数，以及每分钟成本。
+\end{enumerate}
+
+人类 turn-taking 本身存在文化差异\cite{stivers2009turntaking}，因此不能以单一“越快越好”作为自然性目标。应报告 transition gap 的完整分布，并让人评同时评价响应相关性、是否唐突、是否啰嗦和对打断的尊重程度。
+
+\subsection{关键指标定义}
+
+设用户在 $t_b$ 时刻开始插话，助手在 $t_s$ 时刻停止可听语音，则停声延迟为 $t_s-t_b$；只有当用户输入确实构成有效的语义打断时，才记为真正例。由此定义
+\begin{equation}
+P_{int}=\frac{N_{correct\ stop}}{N_{all\ stop}},\qquad
+R_{int}=\frac{N_{correct\ stop}}{N_{valid\ barge\mbox{-}in}}.
+\end{equation}
+只优化 $R_{int}$，可能导致咳嗽或简短应答也让模型停止发言；只优化 $P_{int}$，模型又可能显得一直“抢着说”。因此，应同时报告 $F_1$、停声延迟分位数和恢复成功率。
+
+委派应以 counterfactual 方式评价：对同一任务比较不委派、同步委派、异步委派。指标包括 interaction stall、最终正确率、首个有用反馈、工具往返数和用户取消后的浪费算力。异步方案的价值不是让最终答案必然更快，而是在慢任务期间保持对话可用。
+
+\subsection{实验矩阵与归因原则}
+
+为避免混淆因素，建议固定 backbone、训练 token、双工/真实数据比例、codec、硬件与网络 trace，只改变一个设计轴。表中的 FIFO\footnote{First In, First Out，先进先出。} 与 EDF\footnote{Earliest Deadline First，最早截止期优先。} 是两类调度基线，核心消融如下：
+
+\begin{table}[H]
+\centering\small
+\caption{建议的可归因消融实验。}
+\begin{tabularx}{\textwidth}{p{3.0cm}p{4.0cm}X}
+\toprule
+设计轴 & 对照组 & 主要指标与预期风险 \\
+\midrule
+用户流路由 & 通道融合 / cross-attention / 门控混合 & SQA、重叠后语义干扰、停声延迟 \\
+时间粒度 & 40/80/160/320 ms & DMR、打断延迟、token throughput、语音自然度 \\
+动作表达 & 仅 silence token / FSM control token / action channel & 控制精度、工具参数精确匹配、主干负担 \\
+训练方案 & 直接全双工 / 三阶段 / 六阶段 & 收敛、文本能力遗忘、真实交互评分 \\
+交互--思考 & 单模型 / 同步委派 / 异步委派 & 交互停顿、任务正确率、成本、取消浪费 \\
+上下文管理 & sliding window / 摘要 / 后台 handoff & 长会话一致性、handoff gap、KV cache 显存 \\
+调度策略 & FIFO / continuous batching / EDF+算力预留 & 每 GPU 稳定 session 数、DMR、P99 jitter \\
+网络 & 标准 WebRTC / 1-RTT 优化 / 预连接 & connect latency、安全与空连成本 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+每项结果至少报告均值、P50/P95/P99\footnote{分别表示第 50、95 和 99 百分位数；P99 常用于观察系统长尾延迟。}、置信区间与分场景样本量。语音模型的随机性和网络 trace 都会放大方差；若只报告一次 demo 或平均 latency，无法支持架构结论。

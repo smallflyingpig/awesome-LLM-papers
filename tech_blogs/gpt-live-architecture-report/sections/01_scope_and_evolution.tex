@@ -1,0 +1,76 @@
+\section{问题定义、证据边界与演进路线}
+
+\subsection{研究缘起：从 OpenAI 的一篇工程博客说起}
+
+本文的直接缘起，是 OpenAI 于 2026 年 8 月 3 日发布的工程博客《How We Built a Realtime System for Responsive Voice AI in Six Months》\cite{openai2026continuous}。与通常侧重功能展示和评测结果的产品介绍不同，这篇文章从工程实现出发，解释了团队为何放弃依赖轮次检测器的传统语音架构，以及如何在六个月内重新设计推理、上下文管理和媒体传输系统。博客披露的若干细节尤其引起了笔者的兴趣：语音模型可以同时听和说；媒体帧通过独立的快速路径传输；复杂推理和工具调用沿另一条异步路径执行；长会话通过后台上下文压缩和模型实例切换保持连续；WARP 与 Instant Connect 则试图进一步缩短 WebRTC\footnote{Web Real-Time Communication，Web 实时通信技术栈，用于浏览器或客户端之间的低延迟音视频与数据传输。} 建连时间。
+
+这些公开信息勾勒出了 GPT-Live 的系统轮廓，却也留下了更值得追问的问题：全双工语音模型如何在生成期间持续接收新输入？模型如何表示双方重叠的语音以及暂停、简短应答和打断等交互动作？快速交互模型与深层推理模型之间如何传递上下文和结果？一个持续数十分钟的有状态会话，又如何在 GPU 调度、KV 缓存、网络抖动和实例故障之下保持流畅？
+
+这篇博客因此成为本文的出发点。本文并不复述其产品功能，而是以其中公开的系统边界为线索，结合近几年的顶会论文、技术报告、开源实现和网络协议，尝试还原一套技术上自洽、证据上可追溯的 GPT-Live 架构图景。换言之，本文要回答的不只是“GPT-Live 有哪些能力”，而是“为了实现这些能力，模型与系统分别需要解决什么问题”。
+
+\subsection{本文究竟解释什么}
+
+“GPT-Live 如何实现”包含两个容易混淆的问题。其一是\emph{模型问题}：音频如何表示，用户流如何进入 Transformer，模型如何同时预测语义、声学与交互动作。其二是\emph{系统问题}：网络抖动、连续会话、GPU 推理时限、KV 缓存、复杂推理与工具调用如何在不中断语音交互的条件下协同工作。GPT-Live 的公开材料表明，系统问题已经与模型问题同等重要\cite{openai2026gptlive,openai2026continuous}。因此，本文研究的是“能够处理自然语音重叠、随时接受打断、持续反馈并执行后台任务的在线语音智能体”，而不是某个孤立的模型检查点。
+
+证据采用三级标注：\FOne 仅来自 OpenAI 官方文章和系统卡；\FTwo 来自同行评审论文、作者技术报告、开源代码或标准；\Hyp 是由多项事实共同约束的架构重建。尤其需要强调，OpenAI 没有公开 GPT-Live 的参数量、音频 tokenizer、frame rate、attention 连接方式、训练 token 数或集群规模。Moshi、DuplexOmni 等工作可以说明一种机制在工程上可行，却不能证明 GPT-Live 使用同一机制。
+
+\subsection{四代语音交互范式}
+
+\paragraph{级联式语音管线。}
+传统系统串联 VAD/endpointing、ASR、文本 LLM 和 TTS\footnote{VAD：Voice Activity Detection，语音活动检测；ASR：Automatic Speech Recognition，自动语音识别；LLM：Large Language Model，大语言模型；TTS：Text-to-Speech，文本转语音。}。其优势是模块可观测、组件易替换、文本工具生态成熟；问题是误差逐层累积，韵律与非语言信号在文本瓶颈处丢失，而且每轮必须等待“用户说完”。总延迟可粗略写为
+\begin{equation}
+T_{\mathrm{cascade}}=T_{\mathrm{endpoint}}+T_{\mathrm{ASR}}+T_{\mathrm{LLM,first}}+T_{\mathrm{TTS,first}}+T_{\mathrm{net}}.
+\end{equation}
+其中，端点检测（endpointing）往往是尾部延迟的主要来源。即便所有模型都支持流式处理，只要状态机仍强制各模块串行运行，交互本质上仍是半双工。
+
+\paragraph{轮次式端到端 Omni Model。}
+GPT-4o 将文本、视觉和音频统一到一个神经网络中，官方报告其音频响应最低可达 $232\ms$、平均为 $320\ms$\cite{openai2024gpt4osystemcard}。\FOne 这种架构缓解了级联管线中的模态信息损失，并降低了部分首包延迟，但“端到端”并不自然等同于“全双工”：如果推理 API\footnote{Application Programming Interface，应用程序编程接口。} 在生成期间不再接收新的用户音频帧，或仍依赖外部 VAD 判定一轮对话结束，系统依然是轮次式的。Qwen2.5-Omni 的 Thinker--Talker、GLM-4-Voice 与 Mini-Omni 展示了流式语音到语音的不同实现\cite{xu2025qwenomni,zeng2024glm4voice,xie2024miniomni}，但其交互调度能力仍需单独评估。
+
+\paragraph{单模型全双工。}
+Moshi、SyncLLM、LSLM 和 Neural-FSM 将时间以及用户、助手两条音频流显式纳入建模：同一时刻既有用户通道，也有助手通道，模型可以选择静默、给出简短应答、继续发言、停止或接受打断\cite{defossez2024moshi,veluri2024syncllm,ma2025lslm,wang2024neuralfsm}。此时，inference unit 从“一轮对话”缩短为固定时长的 audio frame 或 chunk；延迟关注点也从 time-to-first-token（TTFT），转变为每个 audio frame 能否在 playout deadline 前完成。
+
+\paragraph{交互--认知解耦的连续智能体。}
+\FOne GPT-Live 将快速交互与复杂思考拆开：交互模型持续监听和发声，深层推理或工具调用异步委派给更强模型；结果准备好后再自然并入对话\cite{openai2026gptlive,openai2026continuous}。2026 年 DuplexOmni 独立提出 interaction layer 与 pluggable thinking layer 的并行结构\cite{huang2026duplexomni}，为这种范式提供公开学术参照。它不是回到 ASR--LLM--TTS 级联，而是让低延迟闭环与高智能闭环工作在不同时间尺度。
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[node distance=6mm,>=Latex,font=\small,
+box/.style={draw,rounded corners,minimum height=10mm,text width=31mm,align=center,fill=blue!5},
+arr/.style={->,thick}]
+\node[box] (c1) {级联语音\\VAD$\to$ASR\\LLM$\to$TTS};
+\node[box,right=of c1] (c2) {Turn-based Omni\\统一模态，轮次推进};
+\node[box,right=of c2] (c3) {Full-duplex Model\\双方流+统一时钟};
+\node[box,right=of c3,fill=orange!10] (c4) {Continuous Agent\\交互层$\parallel$思考层};
+\draw[arr] (c1)--(c2);
+\draw[arr] (c2)--(c3);
+\draw[arr] (c3)--(c4);
+\end{tikzpicture}
+\caption{语音模型的关键演进不是单纯扩大参数，而是逐步解除文本瓶颈、轮次屏障和单时间尺度推理。}
+\label{fig:evolution}
+\end{figure}
+
+\subsection{GPT-Live 的官方系统轮廓}
+
+\FOne OpenAI 描述的线上系统可归纳为四个平面。第一，\textbf{媒体平面（media plane）}通过 WebRTC 持续收发音频，并处理 packet loss、jitter、clock drift 和 audio catch-up。第二，\textbf{交互平面（interaction plane）}运行 GPT-Live 语音模型，按照 audio clock 持续决定何时说、听、停、插话、调用工具或发起委派。第三，\textbf{认知平面（cognition plane）}维护预先创建和填充、具有稳定 session affinity 的 frontier-model session，用于承接复杂推理。第四，\textbf{控制与状态平面（control/state plane）}维护 session state、transcript、context compaction、安全控制和 instance handoff\cite{openai2026continuous,openai2026safety}。
+
+在媒体快速路径与应用逻辑之间设置异步 RPC\footnote{Remote Procedure Call，远程过程调用。} 边界至关重要：数据库访问、业务逻辑或耗时工具都不能反向阻塞音频帧。系统因而存在两个一致性层级：音频路径采用“时限优先”的弱同步方式，应用状态则采用可重试的事件语义。连续音频之上仍可推导出离散的语义轮次，并同时维护临时转写（speculative transcript）和最终转写（authoritative transcript）。因此，“取消轮次检测器”指的是取消会阻塞音频路径的轮次门控，而不是放弃语义分段。
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[>=Latex,node distance=8mm and 10mm,
+p/.style={draw,rounded corners,minimum width=28mm,minimum height=10mm,align=center},
+fast/.style={->,very thick,official},slow/.style={->,thick,dashed,hypothesis}]
+\node[p,fill=blue!7] (client) {客户端\\Mic / Speaker};
+\node[p,fill=blue!7,right=of client] (media) {Media Fast Path\\WebRTC / WARP};
+\node[p,fill=green!8,right=of media] (live) {GPT-Live\\Interaction Core};
+\node[p,fill=orange!10,right=16mm of live] (think) {Frontier Model\\Reasoning / Tools};
+\node[p,fill=gray!10,below=12mm of live] (state) {Session State\\Transcript / Safety / Compaction};
+\draw[fast,<->] (client)--(media);
+\draw[fast,<->] (media)--(live);
+\draw[slow,<->] (live)--node[above,font=\scriptsize]{async delegation}(think);
+\draw[slow,<->] (live)--(state);
+\draw[slow,<->] (think)|-(state);
+\end{tikzpicture}
+\caption{证据约束下的 GPT-Live 系统轮廓。蓝色实线是低延迟媒体闭环，橙色虚线是允许更高延迟的认知与状态闭环。图中逻辑分层来自官方事实；模块内部实现仍未公开。}
+\label{fig:official-architecture}
+\end{figure}
