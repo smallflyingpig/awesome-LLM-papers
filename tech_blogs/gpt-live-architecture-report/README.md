@@ -6,9 +6,7 @@
 
 ## 文件说明
 
-- `main.tex`：论文入口与全局格式。
-- `sections/`：按主题拆分的正文，共 10 个一级章节。
-- `references.bib`：38 条参考文献，优先使用官方材料、论文原文和 IETF 标准/草案。
+- `main.tex`：自包含的完整 LaTeX 源文件，包括全局格式、全部正文和 38 条参考文献；不依赖外部章节或 BibTeX 文件。
 - `evidence-matrix.md`：32 条关键命题的证据类型、来源与写作边界。
 - `quality-review.md`：交付前质量评分与自动检查结果。
 - `gpt-live-architecture-report.pdf`：最终编译版 PDF。
@@ -35,4 +33,4 @@ tectonic -X compile --outdir build --outfmt pdf --keep-logs main.tex
 latexmk -xelatex -interaction=nonstopmode main.tex
 ```
 
-首次在另一台机器编译时，中文字体可能与 macOS 默认宋体略有差异，但正文、TikZ 图和 BibTeX 均为可编辑源文件。
+首次在另一台机器编译时，中文字体可能与 macOS 默认宋体略有差异；正文、TikZ 图和参考文献均可直接在 `main.tex` 中编辑。
