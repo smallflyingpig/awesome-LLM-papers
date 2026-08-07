@@ -110,7 +110,7 @@
 \noindent\color{deepblue}\rule{\textwidth}{0.8pt}\color{black}
 \vspace{0.3em}
 \begin{abstract}
-LLM scaling law 不是“参数越大、能力越强”的口号，而是在固定数据分布、模型族与训练配方下，用一组受控的小规模实验刻画损失随参数量、训练 token 与计算量变化的局部经验规律，并据此进行资源配置和外推决策。本文沿着 learning curve、Kaplan 三轴幂律、Chinchilla compute-optimal、data-constrained/data-quality scaling、MoE 与 inference-time scaling 的脉络，给出核心公式、推导、拟合和验证细节。报告进一步整理 \textbf{2020--2026 年 28 个公开模型家族}的尺寸、训练 token、total/active parameters 与证据等级，用来检验公开实践支持什么、不能支持什么。面向预训练工程，本文给出 isoFLOP 实验矩阵、鲁棒拟合、scale holdout、bootstrap、不确定性传播，以及 code/repo-level 数据策略的可量化验证框架。核心结论是：\textbf{同分布 validation loss 的局部外推最可靠}；\textit{跨代 benchmark 与能力涌现最不可靠}；\textbf{函数形式可以迁移，系数、最优 token/parameter 比和能力阈值通常不能直接迁移}。
+LLM scaling law 不是“参数越大、能力越强”的口号，而是在固定数据分布、模型族与训练配方下，用一组受控的小规模实验刻画损失随参数量、训练 token 与计算量变化的局部经验规律，并据此进行资源配置和外推决策。本文沿着 learning curve、Kaplan 三轴幂律、Chinchilla compute-optimal、data-constrained/data-quality scaling、MoE 与 inference-time scaling 的脉络，给出核心公式、推导、拟合和验证细节。报告进一步整理 \textbf{2020--2026 年 32 个公开模型家族}的尺寸、训练 token、total/active parameters 与证据等级，用来检验公开实践支持什么、不能支持什么。面向预训练工程，本文给出 isoFLOP 实验矩阵、鲁棒拟合、scale holdout、bootstrap、不确定性传播，以及 code/repo-level 数据策略的可量化验证框架。核心结论是：\textbf{同分布 validation loss 的局部外推最可靠}；\textit{跨代 benchmark 与能力涌现最不可靠}；\textbf{函数形式可以迁移，系数、最优 token/parameter 比和能力阈值通常不能直接迁移}。
 
 \vspace{0.5em}
 \noindent\textbf{关键词：}大语言模型；Scaling Law；Compute-Optimal；数据扩展；MoE；推理时计算；代码预训练
@@ -387,7 +387,7 @@ Parametric surface & 拟合 $L(N,D)$ 后解析求最优 & 利用全部点并连�
 
 \section{公开 LLM 尺寸：实践如何印证、又如何混淆 Scaling}
 
-附录~\ref{app:model-inventory} 收录 2020--2026 年 28 个公开模型家族。主文只抽取适合形成判断的对照。表~\ref{tab:dense-families} 中，GPT-3、Pythia、Cerebras-GPT 尺寸点密集；LLaMA、Llama 3.1、Qwen2.5/Qwen3 与 OLMo 2 更能代表现代 data-rich 与 deployment-oriented 训练。
+附录~\ref{app:model-inventory} 收录 2020--2026 年 32 个公开模型家族。主文只抽取适合形成判断的对照。表~\ref{tab:dense-families} 中，GPT-3、Pythia、Cerebras-GPT 尺寸点密集；LLaMA、Llama 3.1、Qwen2.5/Qwen3 与 OLMo 2 更能代表现代 data-rich 与 deployment-oriented 训练。LongCat、Kimi 与 GLM 的跨代公开数字则提供了较新的 MoE 纵向对照；Claude Fable 5 的参数和训练 token 未披露，只能用于标示闭源 frontier 的证据边界。
 
 \begin{table}[htbp]
 \centering
@@ -577,8 +577,12 @@ Broken scaling law & 允许不同 scale regime 中斜率平滑变化的经验规
 2025 & Qwen3\cite{qwen3} & Dense+\allowbreak MoE & 0.6B; 1.7B; 4B; 8B; 14B; 32B; 30B-MoE; 235B-MoE & Dense 同 total; MoE 3B/22B & 约 36T & B$+$ & 同代 dense 梯度与 active-parameter MoE 对照。 \\
 2025 & Llama 4\cite{llama4} & MoE & Scout 109B; Maverick 400B & 均 17B & 未以 fit-ready 形式披露 & C$+$ & 多模态与 distillation 混杂，只支持 active/total 区分。 \\
 2025 & Gemma 3\cite{gemma3} & Dense 多模态 & 270M; 1B; 4B; 12B; 27B & 同 total & 随尺寸变化 & C$+$ & 部署尺寸梯度；多模态与 recipe 限制经典比较。 \\
+2025\newline 2026 & LongCat\cite{longcatflash,longcat2} & MoE & Flash 560B; 2.0 1.6T & Flash 18.6--31.3B（均值约 27B）; 2.0 约 48B & Flash 未公开; 2.0 超过 35T & C$+$ & 同家族 total/active/data 同时扩展；跨代架构变化，不能归因于单轴。 \\
+2025\newline 2026 & Kimi K2/K3\cite{kimik2,kimik3} & MoE 多模态 & K2 1T; K3 2.8T & 32B; 104B & K2 15.5T; K3 未公开 & C$+$ & 展示更高 sparsity 下容量与 active compute 联合扩展；K3 非 fit-ready。 \\
+2025\newline 2026 & GLM 4.5/5\cite{glm5} & MoE & 355B; 744B & 32B; 40B & 23T; 28.5T & B$-$ & 同家族公开纵向点；参数、数据、架构及 post-training 同时变化。 \\
 2026 & Gemma 4\cite{gemma4} & Dense+\allowbreak MoE 多模态 & E2B; E4B; 12B; 31B; 26B-A4B & A4B 约 4B active & 未公开 & C & 当前 inventory；缺乏拟合 scaling law 的证据。 \\
 2026 & DeepSeek-V4\cite{deepseekv4} & MoE & Flash 284B; Pro 1.6T & 13B; 49B & 未公开 & C & total capacity 增长而 active compute 相对克制；非 fit-ready。 \\
+2026 & Claude Fable 5\cite{claudefable5} & 未公开 & 未公开 & 未公开 & 未公开 & C & 官方确认产品与 system card，但训练尺度未披露；只能作为披露边界，不能拟合 scaling。 \\
 \end{longtable}
 
 \clearpage
@@ -665,8 +669,14 @@ Broken scaling law & 允许不同 scale regime 中斜率平滑变化的经验规
 \bibitem{qwen3} \bibentry{Qwen Team}{Qwen3: Think Deeper, Act Faster}{Official technical blog}{2025}{https://qwenlm.github.io/blog/qwen3/}
 \bibitem{llama4} \bibentry{Meta AI}{The Llama 4 Herd: The Beginning of a New Era of Natively Multimodal AI Innovation}{Official release}{2025}{https://ai.meta.com/blog/llama-4-multimodal-intelligence/}
 \bibitem{gemma3} \bibentry{Google}{Gemma Models Documentation}{Official documentation; accessed 2026-08-07}{2025}{https://ai.google.dev/gemma/docs/get_started}
+\bibitem{longcatflash} \bibentry{LongCat Team}{LongCat-Flash Technical Report}{Official repository and technical report}{2025}{https://github.com/meituan-longcat/LongCat-Flash-Chat}
+\bibitem{longcat2} \bibentry{LongCat Team}{LongCat-2.0}{Official repository and technical blog; accessed 2026-08-07}{2026}{https://github.com/meituan-longcat/LongCat-2.0}
+\bibitem{kimik2} \bibentry{Kimi Team et al.}{Kimi K2: Open Agentic Intelligence}{arXiv:2507.20534}{2025}{https://arxiv.org/abs/2507.20534}
+\bibitem{kimik3} \bibentry{Kimi Team}{Kimi K3: Open Frontier Intelligence}{Official repository and technical report; accessed 2026-08-07}{2026}{https://github.com/MoonshotAI/Kimi-K3}
+\bibitem{glm5} \bibentry{Z.ai}{GLM-5: From Vibe Coding to Agentic Engineering}{Official repository and technical report; accessed 2026-08-07}{2026}{https://github.com/zai-org/GLM-5}
 \bibitem{gemma4} \bibentry{Google}{Gemma Models Documentation: Current Model Inventory}{Official documentation; accessed 2026-08-07}{2026}{https://ai.google.dev/gemma/docs/get_started}
 \bibitem{deepseekv4} \bibentry{DeepSeek}{DeepSeek-V4 Official Release}{Official release}{2026}{https://api-docs.deepseek.com/news/news260424/}
+\bibitem{claudefable5} \bibentry{Anthropic}{Claude Fable 5 \& Claude Mythos 5 System Card}{Official system card}{2026}{https://www-cdn.anthropic.com/2f9323abbcc4abe219577539efe19a623c9ca2bd/Claude\%20Fable\%205\%20\%26\%20Claude\%20Mythos\%205\%20System\%20Card.pdf}
 
 \end{thebibliography}
 
