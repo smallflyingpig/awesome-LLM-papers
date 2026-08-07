@@ -1,0 +1,43 @@
+# LaTeX build products
+*.aux
+*.bbl
+*.bcf
+*.blg
+*.dvi
+*.fdb_latexmk
+*.fls
+*.fmt
+*.fot
+*.glg
+*.glo
+*.gls
+*.glsdefs
+*.idx
+*.ilg
+*.ind
+*.ist
+*.lof
+*.log
+*.lol
+*.lot
+*.nav
+*.out
+*.run.xml
+*.snm
+*.synctex
+*.synctex.gz
+*.toc
+*.vrb
+*.xdv
+
+# Generated directories and editor artifacts
+_build/
+build/
+_minted-*/
+*.pyg
+*.bak
+*.swp
+*~
+
+# Keep publication sources and final deliverables tracked:
+#   *.tex, *.bib, *.sty, *.cls, *.md, *.pdf
