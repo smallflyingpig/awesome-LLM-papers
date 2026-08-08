@@ -276,13 +276,13 @@ Code Agent & search、view、edit、test、submit & \textbf{可变 repo、依赖
 \node[box,below=8mm of mid] (agent) {Agent Runtime\\检索 / 编辑 / 执行};
 \node[data,left=of agent] (env) {可执行环境\\版本 / 依赖 / 测试};
 \node[data,right=of agent] (eval) {分层评估\\能力 / 成本 / 风险};
-\draw[arr] (raw) -- (pre);
-\draw[arr] (pre) -- (mid);
-\draw[arr] (mid) -- (post);
-\draw[arr,rounded corners=1.5pt] (post.south west) -- ++(0,-4mm) |- (agent.north east);
-\draw[arr] (env) -- (agent);
-\draw[arr] (agent) -- (eval);
-\draw[arr] (eval.north east) -- (post.south east);
+\draw[arr] (raw.east) -- (pre.west);
+\draw[arr] (pre.east) -- (mid.west);
+\draw[arr] (mid.east) -- (post.west);
+\draw[arr,rounded corners=1.5pt] (post.south) -- ++(0,-4mm) -| (agent.north);
+\draw[arr] (env.east) -- (agent.west);
+\draw[arr] (agent.east) -- (eval.west);
+\draw[arr,rounded corners=1.5pt] (eval.east) -- ++(4mm,0) |- (post.east);
 \draw[arr] (agent.south) -- ++(0,-5mm) -| (raw.south);
 \end{tikzpicture}
 \caption{Code Agent 的四线闭环。训练数据必须保留到可执行环境与评估结果的血缘，运行轨迹再回流为下一轮 SFT、偏好或 verifier 数据。}
