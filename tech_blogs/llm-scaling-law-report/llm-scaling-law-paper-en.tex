@@ -1,0 +1,699 @@
+% !TEX program = xelatex
+\documentclass[UTF8,10pt,a4paper,fontset=none]{ctexart}
+
+\usepackage[a4paper,left=19mm,right=19mm,top=18mm,bottom=19mm,headheight=14pt,headsep=7mm,footskip=10mm]{geometry}
+\usepackage{fontspec}
+\usepackage{amsmath}
+\usepackage{booktabs,longtable,tabularx,array}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage{graphicx}
+\usepackage{caption}
+\usepackage{hyperref}
+\renewcommand{\abstractname}{Abstract}
+\renewcommand{\contentsname}{Contents}
+\renewcommand{\figurename}{Figure}
+\renewcommand{\tablename}{Table}
+\renewcommand{\refname}{References}
+\renewcommand{\appendixname}{Appendix}
+
+\setmainfont[
+  BoldFont=texgyretermes-bold.otf,
+  ItalicFont=texgyretermes-italic.otf,
+  BoldItalicFont=texgyretermes-bolditalic.otf
+]{texgyretermes-regular.otf}
+\setsansfont[
+  BoldFont=texgyreheros-bold.otf,
+  ItalicFont=texgyreheros-italic.otf,
+  BoldItalicFont=texgyreheros-bolditalic.otf
+]{texgyreheros-regular.otf}
+\setmonofont[
+  BoldFont=texgyrecursor-bold.otf,
+  ItalicFont=texgyrecursor-italic.otf,
+  BoldItalicFont=texgyrecursor-bolditalic.otf,
+  Scale=0.86
+]{texgyrecursor-regular.otf}
+\DeclareMathSizes{10.95}{10}{10}{10}
+\DeclareMathSizes{10}{10}{10}{10}
+\DeclareMathSizes{9}{10}{10}{10}
+\DeclareMathSizes{8}{10}{10}{10}
+\DeclareMathSizes{7}{10}{10}{10}
+
+\definecolor{deepblue}{HTML}{17365D}
+\definecolor{teal}{HTML}{2459A6}
+\definecolor{softblue}{HTML}{EAF1FB}
+\definecolor{softgray}{HTML}{F4F6F8}
+\definecolor{rulegray}{HTML}{D7DFEA}
+\definecolor{codegreen}{HTML}{2E6B4F}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=deepblue,
+  citecolor=teal,
+  urlcolor=deepblue,
+pdftitle={Scaling Laws for Large Language Models: From Empirical Power Laws and Compute-Optimal Training to Data and Inference Scaling},
+  pdfauthor={Jiguo Li},
+pdfsubject={LLM Scaling Law Technical Report },
+  pdfkeywords={LLM, Scaling Law, Compute-Optimal, Data Scaling, MoE, Inference-Time Compute}
+}
+
+\linespread{1.13}
+\setlength{\parindent}{2em}
+\setlength{\parskip}{2.5pt}
+\setlength{\abovedisplayskip}{6pt}
+\setlength{\belowdisplayskip}{6pt}
+\setlength{\abovedisplayshortskip}{4pt}
+\setlength{\belowdisplayshortskip}{4pt}
+\setlength{\jot}{3pt}
+\emergencystretch=2em
+\setlist{nosep,leftmargin=2em,topsep=2pt,itemsep=1pt,parsep=0pt}
+\renewcommand{\arraystretch}{1.16}
+\captionsetup{font=small,labelfont=bf,labelsep=quad,hypcap=false}
+\ctexset{
+  section={format=\zihao{3}\bfseries\sffamily\color{deepblue},beforeskip=1.8ex,afterskip=0.65ex},
+  subsection={format=\zihao{4}\bfseries\sffamily\color{deepblue},beforeskip=1.35ex,afterskip=0.45ex},
+  subsubsection={format=\normalsize\bfseries\sffamily\color{deepblue},beforeskip=1.0ex,afterskip=0.3ex}
+}
+
+\newcommand{\reportshorttitle}{LLM Scaling Law Technical Report }
+\makeatletter
+\def\ps@scalingreport{%
+  \def\@oddhead{\vbox{\hbox to\textwidth{\small\color{gray}\reportshorttitle\hfill\leftmark}\vskip3pt\hrule height0.3pt}}%
+  \let\@evenhead\@oddhead
+  \def\@oddfoot{\hfil\small\thepage\hfil}%
+  \let\@evenfoot\@oddfoot
+}
+\makeatother
+\pagestyle{scalingreport}
+\renewcommand{\sectionmark}[1]{\markboth{\thesection\quad #1}{}}
+
+\newcolumntype{Y}{>{\raggedright\arraybackslash}X}
+\newcolumntype{C}[1]{>{\centering\arraybackslash}p{#1}}
+\newcolumntype{R}[1]{>{\raggedleft\arraybackslash}p{#1}}
+\newcommand{\codeid}[1]{\textnormal{#1}}
+\newcommand{\evidence}[1]{\textcolor{teal}{\textbf{#1}}}
+\newcommand{\term}[1]{\textbf{#1}}
+\newsavebox{\fitcodebox}
+
+\newcommand{\noteBox}[2]{%
+  \begin{center}
+  \setlength{\fboxsep}{7pt}%
+  \setlength{\fboxrule}{0.4pt}%
+  \fcolorbox{teal}{softblue}{\parbox{0.92\linewidth}{%
+    \textbf{\color{deepblue}#1:}\color{black}#2}}
+  \end{center}}
+
+\begin{document}
+
+\begin{center}
+  {\sffamily\bfseries\zihao{1}\color{deepblue}
+Scaling Laws for Large Language Models:\par From Empirical Power Laws to Data and Inference Scaling}
+
+  \vspace{0.6em}
+{\zihao{3}\sffamily A Technical Guide for Pretraining Research and Resource Decisions}
+
+  \vspace{0.55em}
+{\normalsize\textbf{Jiguo Li\footnote{This report was completed with the assistance of Codex.}}}\par
+
+  \vspace{0.2em}
+  {\small\href{mailto:jiguolee@gmail.com}{jiguolee@gmail.com}}\par
+
+  \vspace{0.3em}
+{\small\sffamily Research and revision date: August 7, 2026 }
+\end{center}
+
+\vspace{0.25em}
+\noindent\color{deepblue}\rule{\textwidth}{0.8pt}\color{black}
+\vspace{0.3em}
+\begin{abstract}
+Scaling laws for large language models are local empirical relationships fitted under controlled assumptions about the data distribution, model family, optimizer, and training recipe. They should not be reduced to the claim that larger models are invariably more capable. This technical survey traces the development from learning curves and the Kaplan parameter-data-compute power laws to Chinchilla-style compute-optimal training, data-constrained and data-quality scaling, Mixture-of-Experts scaling, and inference-time scaling. We present the principal equations and discuss experimental design, robust fitting, scale holdouts, bootstrap uncertainty, and the limits of extrapolation. We also compile evidence from 32 publicly documented model families released between 2020 and 2026, comparing model size, training tokens, total and active parameters, and the strength of the available evidence. For pretraining practice, we propose isoFLOP experiment matrices and quantitative protocols for evaluating data mixtures, filtering, deduplication, and repository-level code organization. The central conclusion is that local extrapolation of in-distribution validation loss is considerably more reliable than cross-generation prediction of benchmark performance or emergent capabilities. Functional forms may transfer across settings, but fitted coefficients, compute-optimal token-to-parameter ratios, and capability thresholds generally do not.
+
+\vspace{0.5em}
+\noindent\textbf{Keywords:} large language models; scaling laws; compute-optimal training; data scaling; Mixture-of-Experts; inference-time compute; code pretraining
+\end{abstract}
+
+\noteBox{Key point}{A scaling law is simultaneously a local empirical model, a controlled experimental method, and a resource-allocation tool. It estimates loss changes under a fixed recipe; it does not determine when a capability must emerge.}
+
+\clearpage
+\pdfbookmark[0]{ Catalog }{toc}
+\begingroup
+\setcounter{tocdepth}{2}
+\small
+\setlength{\parskip}{0pt}
+\linespread{1.02}\selectfont
+\tableofcontents
+\endgroup
+\clearpage
+
+\section{Introduction: Four Distinct Scaling Questions}
+
+At least four questions are often conflated in discussions of large language models. The first is \term{loss scaling}: as model parameters $N$, training tokens $D$, or training compute $C$ increase, does held-out cross-entropy loss decrease smoothly over the scale range under study? The second is \term{compute-optimal scaling}: given a fixed training budget, should compute be allocated to a larger model or to more data? The third is \term{capability scaling}: do continuous improvements in loss translate into continuous gains on MMLU, code generation, or reasoning tasks? The fourth is \term{system/economic scaling}: is a training-FLOP-optimal model also cost-effective to serve and deploy?
+
+The four questions rest on evidence of different strengths. Continuous validation loss measured on a fixed distribution aligned with the training objective usually has the lowest noise. Discrete metrics such as exact match and pass@1 are sensitive to thresholds, prompts, sampling, and contamination. Lifecycle optima additionally depend on request volume, GPU memory, latency, and service lifetime. We therefore use the evidence classification in Table~\ref{tab:evidence-level}.
+
+\begin{table}[htbp]
+\centering
+\caption{Scaling Evidence grading. Only level A evidence is suitable for fitting laws, and level B/C is mainly used for trend verification.}
+\label{tab:evidence-level}
+\begin{tabularx}{\textwidth}{C{1.1cm}YY}
+\toprule
+Grade & Definition & Typical Material \\
+\midrule
+\evidence{A} & Same architecture, same tokenizer, same data distribution, system changes $N/D/C$, public loss or checkpoints & Chinchilla pilot, Pythia, Cerebras-GPT \\
+\evidence{B} & The same generation model family, the key training information is public, but the size points are less or the token/recipe changes with the size & GPT-3, LLaMA, Llama 2/3.1, Qwen2.5 \\
+\evidence{C} & Cross-generation or single endpoint, significant changes in architecture, data, multi-modality or post-training & Gemma 2/4, Llama 4, DeepSeek-V4 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\noteBox{Key evidence boundary}{The public model size table is not a universal scaling curve. Different tokenizers, data quality, code ratio, architecture, context length, and post-training are all strong confounding variables; cross-family scatter points at best illustrate engineering trends and fail to identify causal effects of parameter quantities. }
+
+\section{Origin of the problem: From Learning Curve to language model power law}
+
+\subsection{Early starting point: Error decreases as a power law with the amount of data}
+
+Machine learning has long used learning curves to observe the relationship between data volume and generalization error. The turning point of modern neural scaling law is the observation by Hestness et al. on tasks such as machine translation, language modeling, image and speech: within multiple orders of magnitude, the reducible error often approximately obeys a simple power law, and the optimal model size also increases with the amount of data.\cite{hestness2017}. Rosenfeld et al. further proposed a functional form that depends on both model size and data size, and used smaller-scale experiments to predict larger-scale performance.\cite{rosenfeld2019}.
+
+A univariate power law is usually written as
+\begin{equation}
+  L(x)=L_{\infty}+A x^{-\alpha},
+  \label{eq:single-power}
+\end{equation}
+Among them, $x$ can be the amount of parameters, data or calculation; $L_{\infty}$ is the lower limit of asymptotic loss under the current distribution and model family; $A x^{-\alpha}$ is the part that can be reduced by expanding resources; $\alpha>0$ is the expansion efficiency. After subtracting $L_{\infty}$, the formula ~\eqref{eq:single-power} becomes a straight line in log--log coordinates:
+\begin{equation}
+  \log\!\left(L-L_{\infty}\right)=\log A-\alpha\log x.
+  \label{eq:loglinear}
+\end{equation}
+The exponent is usually small, meaning diminishing marginal returns are strong. More importantly, ordinary linear regression cannot be performed directly when $L_{\infty}$ is unknown; otherwise the slope will produce systematic deviation.
+
+\subsection{Kaplan: A Unified View of Parameters, Data, and Compute}
+
+Kaplan et al. placed language-model parameters $N$, training tokens $D$, and training compute $C$ in a unified framework and fitted loss curves across several orders of magnitude\cite{kaplan2020}. Their representative exponents were approximately $\alpha_N=\textbf{0.076}$, $\alpha_D=\textbf{0.095}$, and $\alpha_C=\textbf{0.050}$. They reached an early compute-optimal conclusion: as the budget grows, model size should increase faster than data volume, approximately as
+\begin{equation}
+  N_{\mathrm{opt}}\propto C^{0.73},\qquad
+  D_{\mathrm{opt}}\propto C^{0.27}.
+  \label{eq:kaplan-opt}
+\end{equation}
+This conclusion affects the GPT-3-style "large model, relatively few tokens, early stop" training route \cite{brown2020}. Its contribution is not to give the eternal index, but to turn "whether the expanded model is effective" into an engineering problem of "use the pilot to predict the target run."
+
+\subsection{Why power laws work but are not laws of nature}
+
+Power laws can arise from variance limits, resolution limits, or approximation error in different regimes. Theory can explain common functional shapes but does not yield universal exponents across data distributions and architectures\cite{bahri2021}. Empirical curves may also exhibit plateaus, double descent, delayed transitions, or slope changes; a smoothly broken power law can therefore fit better than a single power law\cite{caballero2022}. Equation~\eqref{eq:single-power} should be treated as \term{a local model over a bounded scale range under a fixed training recipe}.
+
+\section{Core Mathematics: From Joint Loss Surfaces to Compute-Optimal}
+
+\subsection{Variable Definitions and the Training-Compute Approximation}
+
+Table~\ref{tab:symbols} defines the notation and measurement conventions used in this report. For a standard dense decoder-only Transformer, a common first-order approximation is
+\begin{equation}
+  C\approx 6ND.
+  \label{eq:compute}
+\end{equation}
+Here forward is about $2ND$ FLOPs, and backward is about twice that of forward. This formula is only suitable for rough planning: embedding, the $O(S^2)$ term of long context attention, MoE routing, the number of activated experts, and communication will all distort it.
+
+\begin{table}[htbp]
+\centering
+\caption{Core variables and measurement conventions for a scaling study.}
+\label{tab:symbols}
+\begin{tabularx}{\textwidth}{C{1.0cm}YY}
+\toprule
+Var. & Meaning & Practical definition \\
+\midrule
+$N$ & model scale & dense commonly used non-embedding parameters; MoE is also recorded as total/active \\
+$D$ & The amount of training data & The token actually sent to the optimizer; duplicate data is also counted \\
+$C$ & Training compute & theoretical FLOPs, measured device FLOPs, and wall-clock time should be recorded separately \\
+$L$ & held-out loss & Fixed tokenizer, token-level NLL on fixed verification distribution \\
+$E$ & irreducible loss & The asymptotic term that needs to be fitted should not be arbitrarily fixed to the paper number \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{Chinchilla joint loss model and derivation}
+
+Hoffmann et al. trained more than 400 models with 70M--16B parameters and 5B--500B tokens, using the joint loss surface \cite{hoffmann2022}:
+\begin{equation}
+  L(N,D)=E+\frac{A}{N^{\alpha}}+\frac{B}{D^{\beta}},
+  \qquad A,B,\alpha,\beta>0.
+  \label{eq:chinchilla}
+\end{equation}
+Under the calculation constraints of the formula ~\eqref{eq:compute}, let $D=C/(6N)$, substitute the formula ~\eqref{eq:chinchilla}:
+\begin{equation}
+  L(N\mid C)=E+A N^{-\alpha}
+  +B\left(\frac{6N}{C}\right)^{\beta}.
+  \label{eq:constrained-loss}
+\end{equation}
+Let the derivative of ~\eqref{eq:constrained-loss} with respect to $N$ be zero, we can get the balance of the two marginal benefits, and get
+\begin{align}
+  N_{\mathrm{opt}}(C)
+  &=G\left(\frac{C}{6}\right)^{\frac{\beta}{\alpha+\beta}},
+  &G&=\left(\frac{\alpha A}{\beta B}\right)^{\frac{1}{\alpha+\beta}},
+  \label{eq:nopt}\\
+  D_{\mathrm{opt}}(C)
+  &=G^{-1}\left(\frac{C}{6}\right)^{\frac{\alpha}{\alpha+\beta}}.
+  \label{eq:dopt}
+\end{align}
+If $a=\beta/(\alpha+\beta)$ and $b=\alpha/(\alpha+\beta)$ are recorded, then $a+b=1$. Intuitively, the higher the marginal benefit of the data item, the closer the optimal point moves to the data side; the higher the marginal benefit of the model item, the further the optimal point moves to the parameter side.
+
+\subsection{Differences between Kaplan and Chinchilla}
+
+\begin{table}[htbp]
+\centering
+\caption{Differences in conclusions between two generations of compute-optimal.}
+\label{tab:kaplan-chinchilla}
+\begin{tabularx}{\textwidth}{Y C{3.2cm} C{3.2cm}}
+\toprule
+Comparison & Kaplan 2020 & Chinchilla 2022 \\
+\midrule
+Index of $N_{\mathrm{opt}}$ to $C$ & 0.73 & About 0.49--0.50 \\
+Index of $D_{\mathrm{opt}}$ to $C$ & 0.27 & About 0.50--0.51 \\
+Engineering implications & Increase model faster and stop earlier & Parameters and token increase at approximately the same proportion \\
+Representative practice & GPT-3 175B / 300B & Chinchilla 70B / 1.4T \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+Chinchilla used a training-compute budget similar to Gopher's, replacing 280B parameters trained on 300B tokens with 70B parameters trained on 1.4T tokens, and outperformed Gopher on most reported tasks\cite{rae2021,hoffmann2022}. This turned scaling laws from tools for explaining curves into tools that directly change training recipes.
+
+The often-quoted value of \textbf{approximately 20 tokens per parameter} is an engineering estimate tied to a particular dataset, model family, and experimental range. It optimizes training FLOPs alone and excludes inference cost, memory pressure, data quality, and repetition. Besiroglu et al. found that Chinchilla's Approach 3 could stop optimization too early and produce confidence intervals that were too narrow; their refitted point estimate remained compatible with roughly \textbf{20--26 tokens per parameter}, but the plausible interval was substantially wider\cite{besiroglu2024}. The robust conclusion is that \term{parameters and training tokens should scale together}, not that one exact constant transfers across systems.
+
+\section{Technical Evolution: Expanding the Independent Variables of Scaling}
+
+\subsection{Migration, multimodality, and production-level predictions}
+
+Henighan et al. extended power-law analysis to images, video, multimodal modeling, and mathematical problem generation\cite{henighan2020}. Hernandez et al. interpreted pretraining gains as an effective increase in downstream data and characterized transfer scaling\cite{hernandez2021}. The GPT-4 technical report illustrates a production use case: small models trained with roughly four orders of magnitude less compute predicted final internal codebase loss, while models trained with roughly three orders of magnitude less compute predicted performance on a subset of HumanEval. The report also states that some capabilities remained difficult to predict\cite{openai2023gpt4}. This evidence supports \term{predictability within a controlled training system}, not universal prediction of arbitrary capabilities.
+
+\subsection{From Smooth Loss to the "Emergence" Debate}
+
+"Emergent abilities" interprets the benchmark ability of the small model to be almost zero and the large model to suddenly increase as the transition \cite{wei2022}. But the discontinuous indicator itself can create jumps: after replacing the exact match with token-level accuracy or Brier score, many curves will be smoother \cite{schaeffer2023}. Therefore, it is necessary to at least distinguish: the internal capabilities of the model may grow smoothly; the task success rate may be S-shaped due to the threshold; prompts and sampling create high variance; three model points are not enough to prove phase transition.
+
+\subsection{From More Data to Effective Data}
+
+Data-constrained scaling research shows that modest duplication of data may result in little loss under a fixed computing budget, but the marginal value of duplication eventually approaches zero \cite{muennighoff2023}. DeepSeek LLM reports that different data versions will change the optimal allocation index, indicating that the scaling coefficient itself can be used as an in-system diagnostic quantity for data and recipes \cite{deepseekllm2024}. DataComp-LM uses standardized small model experiments to show that the filtering strategy can significantly move the performance frontier \cite{datacomplm2024}; the data mixing law also uses the mixture proportion as a fitable variable \cite{datamixing2024}.
+
+Unifying these results, we can write a relationship that is more realistic but cannot be directly fitted at once:
+\begin{equation}
+ \mathrm{quality}=f\!\left(N,D,Q_{\mathrm{data}},C_{\mathrm{train}},
+ C_{\mathrm{test}},\mathrm{architecture},\mathrm{objective}\right).
+ \label{eq:modern-scaling}
+\end{equation}
+Here $Q_{\mathrm{data}}$ is not a single solved scalar, but a collection of filtering, dedup, domain mix, contamination, information density and repetitive structures.
+
+\subsection{From Training-Optimal to Lifecycle-Optimal}
+
+If the model will be called $R$ times, the decision goal is closer
+\begin{equation}
+  J=C_{\mathrm{train}}+R\,c_{\mathrm{infer}}(N,C_{\mathrm{test}}),
+  \label{eq:lifecycle}
+\end{equation}
+Instead of just minimizing training FLOPs. The result of inference-aware scaling is: \textbf{ Under high call volume, training a smaller model that has seen more tokens may have a lower total cost }\cite{sardana2024}. Test-time scaling further shows that \textit{ adaptive allocation search or verifier compute can be more effective on some problems than simply expanding parameters }\cite{snell2024}. Modern scaling thus extends from the $N$--$D$--$C_{\mathrm{train}}$ triangle to the joint optimization of training, deployment and inference time computation.
+
+\section{Implementation: A Scaling Study for Training-Launch Decisions}
+
+\subsection{Define the decision first, then define the experiment}
+
+A usable study must answer actionable questions, such as: given $10^{22}$ FLOPs, choose 1B/20B tokens or 2B/10B tokens; whether the new code filter can move the OOD code loss frontier under waiting FLOPs; whether the benefits of 8K repo-level packing can be extrapolated from 300M/1B pilot to 7B; or at what service volume longer-trained 7B is better than 13B. Without a decision goal, you usually end up with just a nice-looking fitted curve and no training recipe.
+
+\subsection{Minimum experimental matrix and control variables}
+
+Table ~\ref{tab:experiment-matrix} is the minimum usable design for the 7B target model. Scale is more important than absolute numbers: each isoFLOP should cover at least both sides of the optimal point, and the distance between the largest pilot and the target point should not span too many orders of magnitude.
+
+\begin{table}[htbp]
+\centering
+\caption{Proposed pilot experiment matrix. Each grid point represents a complete run, not a checkpoint of the same run.}
+\label{tab:experiment-matrix}
+\begin{tabularx}{\textwidth}{Y Y Y Y}
+\toprule
+Dimension & Recommended value & Purpose & Minimum control requirement \\
+\midrule
+Model scale $N$ & 150M, 300M, 600M, 1.2B, 2.4B & Covers about 1 order of magnitude & Same depth/width rules and architecture family \\
+IsoFLOP $C$ & 4--6 calculation files & Find U-shaped loss--$N$ curve for each file & At least 4 for each file $N/D$ combination \\
+Data version & baseline/candidate & Determine whether the data policy is moved frontier & Same as raw snapshot, tokenizer and mix \\
+Randomness & Key points 2--3 seeds & Estimated run variance & Same initialization distribution and data order rules \\
+Validation set & in-domain + OOD + code/repo & distinguishes between fitting and migration & time segmentation, decontamination, fixed version \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+Each run records at least: total model parameters, non-embedding parameters, MoE active parameters, actual tokens, unique tokens, epochs, theoretical FLOPs, measured throughput, sequence length, tokenizer, data version, language/code mix, optimizer, LR schedule, seed, checkpoint loss and hardware exceptions. Duplicate tokens and unique tokens must be separated; the total/active parameters of MoE must be separated.
+
+\subsection{Robust Fitting, Extrapolation and Uncertainty}
+
+For the observation point $i$, log-space residuals can be fitted
+\begin{equation}
+ r_i=\log\!\left(E+A N_i^{-\alpha}+B D_i^{-\beta}\right)-\log L_i,
+ \label{eq:residual}
+\end{equation}
+and optimize it with Huber loss. A robust implementation parameterizes $A,B,E$ in log space, constrains $\alpha,\beta$ to be positive, tries multiple initializations, and retains failed fits with explicit labels. Bootstrap samples must be drawn at the run level; highly correlated checkpoints from one run are not independent observations. A complete higher-compute frontier should be held out for validation rather than randomly splitting individual observations.
+
+\noindent\textbf{ Code 1: Minimum fitting skeleton of Chinchilla style joint loss surface. }\par\vspace{5pt}
+\begin{small}
+\setlength{\fboxsep}{7pt}
+\setlength{\fboxrule}{0.4pt}
+\begin{lrbox}{\fitcodebox}
+\begin{minipage}{\dimexpr\textwidth-2\fboxsep-2\fboxrule\relax}
+\vspace{1pt}
+\begin{verbatim}
+import numpy as np
+from scipy.optimize import least_squares
+
+def residual(theta, n, d, observed_loss):
+    log_a, log_b, log_e, alpha, beta = theta
+    pred = (np.exp(log_e)
+            + np.exp(log_a) * n ** (-alpha)
+            + np.exp(log_b) * d ** (-beta))
+    return np.log(pred) - np.log(observed_loss)
+
+starts = [[6.0, 6.0, 0.5, a, b]
+          for a in (0.15, 0.30, 0.50, 0.80)
+          for b in (0.15, 0.30, 0.50, 0.80)]
+fits = [least_squares(
+            residual, x0=s, args=(n, d, loss),
+            bounds=([-20, -20, -20, 0.01, 0.01],
+                    [ 40,  40,   5, 2.00, 2.00]),
+            loss="huber", f_scale=1e-3)
+        for s in starts]
+fit = min(fits, key=lambda x: np.sum(x.fun ** 2))
+\end{verbatim}
+\vspace{-5pt}
+\end{minipage}
+\end{lrbox}
+\noindent\makebox[\textwidth][l]{\fcolorbox{rulegray}{softgray}{\usebox{\fitcodebox}}}\par
+\end{small}
+
+\subsection{Cross-Checking Three Estimation Methods}
+
+\begin{table}[htbp]
+\centering
+\caption{Three estimation methods for Compute-optimal.}
+\label{tab:fit-methods}
+\begin{tabularx}{\textwidth}{Y Y Y Y}
+\toprule
+Method & Practice & Advantages & Main risks \\
+\midrule
+Training-curve minimum & Run enough for each $N$ to find the minimum loss for a given compute & Intuitive & requires intensive checkpoints and the early stopping error is large \\
+IsoFLOP profile & Fixed multiple $C$, scan different $N/D$ & Directly answer resource allocation & Interpolation is sensitive when frontier points are small \\
+Parametric surface & Fit $L(N,D)$ and then analyze the optimization & Use all points and continuously extrapolate & Depend on function form, initial value and abnormal points \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+A large and expensive target run is justified only when \textbf{the three estimation methods agree near the target scale and the scale holdout falls within the prediction interval}. Required diagnostics include $\log(L-E)$ against $\log N$, $\log D$, and $\log C$; the U-shaped curve for each isoFLOP profile; a residual heatmap; predicted versus observed loss; bootstrap bands for $N_{\mathrm{opt}}(C)$ and $D_{\mathrm{opt}}(C)$; and the prediction interval for the target run.
+
+When residual shows a systematic trend with scale, the maximum scale continues to skew in the same direction, $E$ edge, data or tokenizer has changed, density switches MoE, and context growth causes attention FLOPs to be non-negligible, the old law should be determined to be invalid and refitted.
+
+\section{Public LLM Sizes: How Practice Supports and Confounds Scaling Analysis}
+
+Appendix ~\ref{app:model-inventory} contains 32 public model families in 2020--2026. The main text only extracts comparisons suitable for forming judgments. In table ~\ref{tab:dense-families}, GPT-3, Pythia, and Cerebras-GPT size points are densely populated; LLaMA, Llama 3.1, Qwen2.5/Qwen3, and OLMo 2 are more representative of modern data-rich and deployment-oriented training. The cross-generation public figures of LongCat, Kimi and GLM provide a newer longitudinal comparison of MoE; the parameters and training tokens of Claude Fable 5 are not disclosed and can only be used to mark the evidence boundaries of the closed source frontier.
+
+\begin{table}[htbp]
+\centering
+\small
+\caption{Representative families of dense models and their evidence bounds.}
+\label{tab:dense-families}
+\begin{tabularx}{\textwidth}{p{2.2cm}p{3.9cm}p{2.5cm}Y}
+\toprule
+Family & Size gradient & Training token & Supported judgment \\
+\midrule
+GPT-3 & 125M--175B, 8 points in total & About 300B each & Size/few-shot trend of the same recipe; not suitable for estimating compute-optimal ratio \cite{brown2020} \\
+Pythia & 70M--12B, 8 points in total & Each about 300B & Open checkpoints and fixed data order, suitable for training dynamics \cite{biderman2023} \\
+Cerebras-GPT & 111M--13B, 7 points in total & 20 tokens/param. & Public Chinchilla-style family\cite{cerebrasgpt2023} \\
+LLaMA & 7B, 13B, 33B, 65B & 1.0T/1.4T & data-rich small model can exceed the old large model; different token budget \cite{llama2023} \\
+Llama 3.1 & 8B, 70B, 405B & exceeds 15T & Modern family far exceeds 20 tokens/parameter; cannot be connected to the old generation \cite{llama31} \\
+Qwen2.5 & 0.5B--72B, 7 points in total & 18T & Modern dense size gradient, description data/recipe mobile frontier\cite{qwen25} \\
+Qwen3 Dense & 0.6B--32B, 6 points in total & About 36T & The new generation small model catching up with the old generation large model is the overall movement of the curve, not parameter failure \cite{qwen3} \\
+OLMo 2 & 1B, 7B, 13B, 32B & up to 5T--6T & Data, code, recipes and checkpoints auditable \cite{olmo2} \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+Public practice supports five relatively robust conclusions. First, \textbf{parameter count is not an independent variable}: results in which LLaMA-13B exceeds GPT-3 175B reflect simultaneous changes in data, token budget, architecture, and training recipe. Second, training has become increasingly \textbf{data rich}, from GPT-3 at 175B parameters and 300B tokens, through Chinchilla at 70B and 1.4T, to Llama 3.1 at more than 15T tokens and Qwen3 at approximately 36T. Third, this shift \textit{does not imply that Chinchilla was wrong}; modern systems also optimize inference cost, deployability, and reuse across a model family. Fourth, filtering, mixture design, and domain data can shift the entire frontier. Fifth, MoE separates scale into parameter capacity and active computation.
+
+\subsection{MoE: Total Parameters and Active Parameters are two axes}
+
+Table ~\ref{tab:moe} shows how MoE can be misread if only looking at the total parameters. The total parameters are closer to the storable expert capacity, and the active parameters are closer to the forward calculation of a single token, but routing, shared experts, communication and load balancing cannot be ignored.
+
+\begin{table}[htbp]
+\centering
+\small
+\caption{Representative MoE model. Total and active parameters cannot be confused.}
+\label{tab:moe}
+\begin{tabularx}{\textwidth}{Y R{2.0cm} R{2.0cm} R{1.7cm} Y}
+\toprule
+Model & Total & Active/token & Tokens & Correct interpretation \\
+\midrule
+Mixtral 8x7B & 46.7B & 12.9B & Undisclosed & Storage capacity is nearly 47B, single token calculation is nearly 13B\cite{mixtral2024} \\
+DeepSeek-V2 & 236B & 21B & 8.1T & Large total capacity and low active compute\cite{deepseekv2} \\
+DeepSeek-V3 & 671B & 37B & 14.8T & 671B cannot be directly substituted into the dense formula ~\eqref{eq:compute}\cite{deepseekv3} \\
+Qwen3-30B-A3B & 30B & 3B & About 36T & Small active model uses expert capacity to improve the effect \cite{qwen3} \\
+Qwen3-235B-A22B & 235B & 22B & About 36T & total/active Determine capacity and cost together \cite{qwen3} \\
+Llama 4 Scout/Maverick & 109B/400B & 17B/17B & Undisclosed & Multimodal mixed with distillation, not clean scaling suite\cite{llama4} \\
+DeepSeek-V4 Flash/Pro & 284B/1.6T & 13B/49B & Unpublished & 2026 endpoint, only supports architectural trend observation \cite{deepseekv4} \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{Implications for Code Pretraining and Data Pipelines}
+
+\subsection{Don't just fit Aggregate Loss}
+
+The code data strategy must at least be fitted separately
+\begin{equation}
+  L_{\mathrm{general}}(N,D),\quad L_{\mathrm{code}}(N,D),\quad
+  L_{\mathrm{repo}}(N,D),\quad L_{\mathrm{swe}}(N,D).
+  \label{eq:domain-losses}
+\end{equation}
+The same data change may reduce code loss, but increase general loss; aggregate loss will be covered up by web text, which accounts for the largest proportion. Loss frontier and HumanEval, MBPP, CrossCodeEval, SWE held-out should be reported separately, and downstream indicators must also complete pollution audits.
+
+\subsection{Settings that must be equivalent when comparing data strategies}
+
+For baseline and candidate pipelines, raw snapshot, tokenizer, unique token budget, language/code mix, $N/D/C$, batch tokens and LR schedule should be fixed; filter retention rate, dedup ratio, average document length, code token ratio, repo coverage should be recorded; in-domain and time segmentation OOD validation should be evaluated at the same time. The core indicators include not only the final $\Delta L$, but also the loss improvement per $10^{20}$ FLOPs, and the FLOPs required to achieve the target loss.
+
+If the candidate uses $D$ token to achieve the baseline loss that can only be achieved by using $kD$ token, you can define a data multiplier.
+\begin{equation}
+  M_{\mathrm{data}}=k.
+  \label{eq:data-multiplier}
+\end{equation}
+It can translate "loss reduced by 0.01" into token efficiency and computing power gains, but the premise is that the two versions of tokenizer, verification set and training trajectory are comparable.
+
+\subsection{Confounders Introduced by Repository-Level Organization}
+
+repo/func-level packing simultaneously changes token adjacency distribution, cross-file mutual information, sequence utilization, sample length, attention FLOPs, repeat function density and pollution propagation range. Therefore, "training tokens are the same" is still not equivalent; effective non-padding tokens, average attention length, measured FLOPs per token, and unique coverage after file/repo-level dedup are also reported.
+
+Recommended two-stage closed loop: \textbf{ covers 4--6 isoFLOPs with 150M--2.4B in the first stage, filters the pipeline and predicts 7B}; \textbf{ makes at least one 7B in the second stage Level, baseline/candidate A/B run} of training tokens. The starting threshold can be set as: target scale predicted code OOD loss improved \textbf{80\% bootstrap lower bound greater than 0}; general OOD loss does not exceed guardrail; token efficiency of FLOPs can be quantified; language ratio and pollution have no significant deviation; target confirmation falls within the pilot prediction interval.
+
+\section{Decision Framework: What Scaling Laws Can and Cannot Predict}
+
+\begin{table}[htbp]
+\centering
+\caption{Relative credibility of different prediction targets.}
+\label{tab:predictability}
+\begin{tabularx}{\textwidth}{Y C{2.0cm} Y}
+\toprule
+Goal & Credibility & Main reason \\
+\midrule
+Same tokenizer, same distribution validation loss & High & Continuous, low noise, consistent with the training target \\
+Neighbor scale compute-optimal $N/D$ & medium to high & requires sufficient frontier points and error bands \\
+OOD domain loss & medium & depends on domain overlap and data mix \\
+Continuous downstream metric & Medium and low & prompt, transfer and contamination intervention \\
+Exact match/pass@1 & Low & Discrete threshold and high variance \\
+When will new capabilities appear & Very low & Definitions, indicators, data and elicitation are all unstable \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+When reviewing any scaling claim, you should first answer three first-level questions: What exactly is the \textbf{ horizontal axis? What exactly is the vertical axis? Are the control variables fixed? } rechecks how many orders of magnitude it covers; how $E$ fits; whether there is a maximum scale holdout; whether seed variance, bootstrap interval and residual are reported; whether unique/repeated tokens are distinguished; whether pollution, prompts and scorer versions are controlled; whether the optimization goal is training FLOPs, wall-clock, inference cost or total cost of ownership.
+
+Common mistakes include: treating the model rankings as scaling law; treating 20 tokens/parameter as a hard specification; comparing nats/tokens of different tokenizers; randomly splitting checkpoints for verification; only reporting $R^2$; using total parameters to estimate MoE FLOPs; directly interpreting benchmark jumps as mechanism mutations; silently deleting failed runs; and moving the paper coefficients directly to internal data. \textbf{ Usually what can be transferred is the functional form and experimental method, not the coefficients. }
+
+\section{Summary and Outlook}
+
+The technical history of LLM scaling law can be summarized as three cognitive upgrades: Hestness and Kaplan illustrate that performance has a predictable structure as resources grow; Chinchilla changes the question from "whether it gets better" to "how to distribute parameters and data"; since then, data quality, duplication, mixture, MoE active compute, inference-time computing and deployment economics have become new expansion axes.
+
+For beginners, the most important understanding is: \textbf{scaling law is not a natural law of intelligence growth, but a local empirical model within a fixed system. } For the pre-training team, the most important actions are: \textbf{ do pilot} on its own tokenizer, data version, model architecture and OOD validation, use isoFLOP and parametric surface to verify each other, report the extrapolation interval, and then use the target scale A/B run to close the loop. \textit{ Public model practice provides directional confirmation, but it cannot replace internal scaling study. }
+
+Open problems include representing data quality with variables that are comparable across systems; extrapolating multi-domain mixtures jointly with scale; measuring the effective token contribution of synthetic data; modeling MoE capacity, active compute, routing entropy, and communication together; jointly optimizing train-time and test-time compute; connecting token loss to repository-level editing and long-horizon agent tasks; and detecting regime changes before the experimental cost becomes prohibitive. The more useful next step is not a grander universal curve, but \term{local scaling laws with explicit evidence levels, error bounds, and decision loops}.
+
+\appendix
+\clearpage
+\section{Glossary}
+\label{app:glossary}
+
+\begin{table}[htbp]
+\centering
+\caption{Scaling law Common term. }\label{tab:glossary}
+\begin{tabularx}{\textwidth}{p{3.6cm}X}
+\toprule
+Term & Definition \\
+\midrule
+Scaling law & The empirical functional relationship between resource scale and loss/performance. \\
+Power law & $y=A x^{-\alpha}$; after subtracting the asymptotic term, it approximates a straight line at log--log coordinates. \\
+Reducible loss & Loss that can be reduced through more models, data or calculations. \\
+Irreducible loss & The asymptotic lower limit under the current data distribution and model family. \\
+Compute-optimal & fixes the resource allocation that minimizes the target loss when training the calculation budget. \\
+IsoFLOP & Fixed training FLOPs, scanning different model/data combinations. \\
+Tokens/parameter & The ratio of the number of training tokens to the number of parameters; it is not a universal constant across recipes. \\
+Active parameters & Parameters that each token in MoE actually activates and participates in calculations. \\
+Data multiplier & candidate data is equivalent to the effective data multiple of the baseline when the data reaches the same loss. \\
+Broken scaling law & An empirical law that allows smooth changes in slope in different scale regimes. \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{Public Model Sizes and Scaling-Evidence Inventory}
+\label{app:model-inventory}
+
+The token number in table ~\ref{tab:model-inventory} comes from the corresponding paper or official release page. "Undisclosed" means that there is no public number of fit-ready, which does not mean that it is inferred to be zero; open weights does not mean that the training data and process are completely open. If the token budget changes with size, you should go back to the original report and expand it model by model. 2026 models are only included if the dimensions are clearly given in official sources, and are uniformly labeled as Level C trend evidence.
+
+\scriptsize
+\hbadness=10000
+\setlength{\tabcolsep}{1.7pt}
+\setlength{\LTleft}{0pt}
+\setlength{\LTright}{0pt}
+\noindent\begin{minipage}{\textwidth}
+\captionof{table}{2020-- will disclose the LLM family, size, training token and scaling evidence in 2026. }\label{tab:model-inventory}
+\end{minipage}
+\begin{longtable}{C{0.55cm}p{1.50cm}p{1.10cm}p{3.20cm}p{2.00cm}p{1.80cm}C{0.65cm}p{3.80cm}}
+\toprule
+Year & Family & Arch. & Total params & Active & Train tokens & Grade & Supported inference \\
+\midrule
+\endfirsthead
+\multicolumn{8}{l}{\small Table ~\thetable (continued) }\\
+\toprule
+Year & Family & Arch. & Total params & Active & Train tokens & Grade & Supported inference \\
+\midrule
+\endhead
+\midrule
+\multicolumn{8}{r}{\small Continued on next page}\\
+\endfoot
+\bottomrule
+\endlastfoot
+2020 & GPT-3\cite{brown2020} & Dense & 125M; 350M; 760M; 1.3B; 2.7B; 6.7B; 13B; 175B & Same as total & is about 300B each & A & Same family parameter scaling and few-shot trends; compute-optimal ratio cannot be estimated. \\
+2021 & Gopher\cite{rae2021} & Dense & 44M; 117M; 417M; 1.4B; 7.1B; 280B & Same as total & Main model about 300B & A$-$ & Size scaling has uneven benefits from different tasks. \\
+2022 & Chinchilla\cite{hoffmann2022} & Dense & 70B & Same as total & 1.4T & A & Same calculation comparison and compute-optimal with Gopher allocation. \\
+2022 & PaLM\cite{palm2022} & Dense & 8B; 62B; 540B & Same as total & 780B & A$-$ & Size trends and apparent benchmark transitions within the family. \\
+2022 & OPT\cite{opt2022} & Dense & 125M; 350M; 1.3B; 2.7B; 6.7B; 13B; 30B; 66B; 175B & Same as total & main setting is about 180B & B$+$ & has wide size coverage; it must be combined with recipe and loss control. \\
+2022 & BLOOM\cite{bloom2022} & Dense & 560M; 1.1B; 1.7B; 3B; 7.1B; 176B & Same as total & 176B Model approx. 350B & B & Multilingual scale viewing; size gradient notched. \\
+2023 & Pythia\cite{biderman2023} & Dense & 70M; 160M; 410M; 1B; 1.4B; 2.8B; 6.9B; 12B & Same as total & Approximately 300B each & A$+$ & One of the best publicly controlled suites suitable for training dynamics. \\
+2023 & Cerebras-GPT\cite{cerebrasgpt2023} & Dense & 111M; 256M; 590M; 1.3B; 2.7B; 6.7B; 13B & Same as total & 20 tokens/parameter & A & Public Chinchilla-style family. \\
+2023 & LLaMA\cite{llama2023} & Dense & 7B; 13B; 33B; 65B & Same as total & 1.0T or 1.4T & B$+$ & data-rich The small model can outperform the old large model; it is not a uniaxial fit. \\
+2023 & Llama 2\cite{llama2} & Dense & 7B; 13B; 70B & Same as total & 2T & B$+$ & Deployment gradient of the same generation; the number of points is not enough to fit the index robustly. \\
+2023 & Falcon\cite{falcon2023} & Dense & 7B; 40B; 180B & Same as total & 180B Up to about 3.5T & B & data-rich and web filtering; token budget changes with size. \\
+2023 & DeepSeek LLM\cite{deepseekllm2024} & Dense & 7B; 67B & Same as total & 2T & A$-$ & pilot extrapolates and shows that data versions change the fit index. \\
+2023 & Mixtral 8x7B\cite{mixtral2024} & MoE & 46.7B & 12.9B & Undisclosed & C$+$ & total and active compute must be separated; not scaling fit. \\
+2024 & Open\allowbreak ELM\cite{openelm2024} & Dense & 270M; 450M; 1.1B; 3B & Same as total & 1.5T & B$+$ & Comparison of small model architecture with token budget. \\
+2024 & OLMo\cite{olmo2024} & Dense & 1B; 7B & Same as total & About 2T--3T & B$+$ & Data sequence, checkpoints and training logs are auditable. \\
+2024 & Llama 3.1\cite{llama31} & Dense & 8B; 70B; 405B & Same as total & More than 15T & B$+$ & Modern data-rich family; does not support universal coefficients. \\
+2024 & Qwen2.5\cite{qwen25} & Dense & 0.5B; 1.5B; 3B; 7B; 14B; 32B; 72B & Same as total & 18T & B$+$ & Modern size gradient showing data/recipe mobile frontier. \\
+2024 & Qwen2.5-Coder\cite{qwen25coder} & Dense & 0.5B; 1.5B; 3B; 7B; 14B; 32B & Same as total & Continued training corpus 5.5T & B$+$ & Code domain gradient; base pretraining and CPT need to be distinguished. \\
+2024 & Gemma 1\cite{gemma1} & Dense & 2B; 7B & Same as total & 2T; 6T & B & Two points; it means that the deployment family does not fix tokens/parameters. \\
+2024 & Gemma 2\cite{gemma2} & Dense & 2B; 9B; 27B & Same as total & 2T; 8T; 13T & C$+$ & 2B/9B contains distillation. The counterexample shows that you cannot just look at the parameters. \\
+2024 & DeepSeek-V2\cite{deepseekv2} & MoE & 236B & 21B & 8.1T & B & Separate storage capacity and per-token compute. \\
+2024 & DeepSeek-V3\cite{deepseekv3} & MoE & 671B & 37B & 14.8T & B & Large Scale MoE Disclosure with calculations; single endpoint is not law. \\
+2024 & OLMo 2\cite{olmo2} & Dense & 1B; 7B; 13B; 32B & Same as total & Up to 5T--6T & B$+$ & Modern fully open family, suitable for data quality research. \\
+2025 & Qwen3\cite{qwen3} & Dense+\allowbreak MoE & 0.6B; 1.7B; 4B; 8B; 14B; 32B; 30B-MoE; 235B-MoE & Dense is the same as total; MoE 3B/22B & is about 36T & B$+$ & The dense gradient of the same generation is compared with active-parameter MoE. \\
+2025 & Llama 4\cite{llama4} & MoE & Scout 109B; Maverick 400B & Both 17B & Not disclosed as fit-ready & C$+$ & Multimodality is mixed with distillation and only supports active/total distinction. \\
+2025 & Gemma 3\cite{gemma3} & Dense Multi-modal & 270M; 1B; 4B; 12B; 27B & Same as total & Varies with size & C$+$ & Deployment size gradient; multimodal versus recipe-limited classic comparison. \\
+2025\newline 2026 & LongCat\cite{longcatflash,longcat2} & MoE & Flash 560B; 2.0 1.6T & Flash 18.6--31.3B (average approx. 27B); 2.0 about 48B & Flash undisclosed; 2.0 more than 35T & C$+$ & same family total/active/data simultaneous expansion; cross-generation architecture changes cannot be attributed to a single axis. \\
+2025\newline 2026 & Kimi K2/K3\cite{kimik2,kimik3} & MoE Multi-mode & K2 1T; K3 2.8T & 32B; 104B & K2 15.5T; K3 undisclosed & C$+$ & shows higher sparsity capacity and active compute joint expansion; K3 is not fit-ready. \\
+2025\newline 2026 & GLM 4.5/5\cite{glm5} & MoE & 355B; 744B & 32B; 40B & 23T; 28.5T & B$-$ & exposes vertical points in the same family; parameters, data, architecture and post-training change at the same time. \\
+2026 & Gemma 4\cite{gemma4} & Dense+\allowbreak MoE Multi-mode & E2B; E4B; 12B; 31B; 26B-A4B & A4B About 4B active & Unpublished & C & Current inventory; lacks evidence of fitting scaling law. \\
+2026 & DeepSeek-V4\cite{deepseekv4} & MoE & Flash 284B; Pro 1.6T & 13B; 49B & Undisclosed & C & total capacity increases while active compute is relatively restrained; not fit-ready. \\
+2026 & Claude Fable 5\cite{claudefable5} & -- & -- & -- & -- & C & Official product and system card, but no disclosed training scale; useful only as an evidence boundary. \\
+\end{longtable}
+
+\clearpage
+\section{Recommended data recording schema and training launch checklist}
+\label{app:schema}
+
+\begin{table}[htbp]
+\centering
+\caption{Scaling experiment minimum record field. }\label{tab:schema}
+\begin{tabularx}{\textwidth}{p{4.0cm}X}
+\toprule
+Field group & Required content \\
+\midrule
+Model & total params, non-embedding params, active params, layers, hidden size, heads, experts, context length \\
+Data & raw snapshot, pipeline version, tokenizer hash, actual/unique tokens, epochs, language and code mix, dedup ratio \\
+Training & global batch tokens, optimizer, peak/min LR, warmup, schedule, weight decay, seed, precision, gradient clipping \\
+Calculate & theoretical FLOPs, measured FLOPs, tokens/s, GPU/NPU hours, MFU, failure and restart records \\
+Evaluation & validation dataset hash, in/OOD loss, bits/byte, benchmark harness, prompt, sampling, pollution audit version \\
+Fitting & functional form, initial value, bounds, loss function, outlier strategy, run-level bootstrap, holdout frontier, prediction interval \\
+Decision & Target size, budget, $N/D$ Recommended range, guardrail, expected data multiplier, confirmation run and go/no-go Conclusion \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\noindent\textbf{Pre-launch checklist:}
+\begin{enumerate}
+\item Are the three compute-optimal methods consistent around the target scale?
+\item Does the maximum compute holdout fall within the prediction interval?
+\item Is the target decision robust to uncertainty in $E,\alpha,\beta$?
+\item Has a regime change occurred in the data version, tokenizer, schema or context?
+\item Do OOD/code/repo loss and aggregate loss give consistent or interpretable signals?
+\item Do the amount of inference, memory, and latency make training-optimal deviate from lifecycle-optimal?
+\end{enumerate}
+
+\clearpage
+\phantomsection
+\addcontentsline{toc}{section}{References}
+\begin{thebibliography}{99}
+\small
+\setlength{\itemsep}{1pt}
+\setlength{\parskip}{0pt}
+\hbadness=10000
+\newcommand{\bibentry}[5]{#1. \href{#5}{\textit{#2}}. #3, #4.}
+
+\bibitem{hestness2017} \bibentry{J. Hestness et al.}{Deep Learning Scaling is Predictable, Empirically}{arXiv:1712.00409}{2017}{https://arxiv.org/abs/1712.00409}
+\bibitem{rosenfeld2019} \bibentry{J. S. Rosenfeld et al.}{A Constructive Prediction of the Generalization Error Across Scales}{ICLR}{2020}{https://arxiv.org/abs/1909.12673}
+\bibitem{kaplan2020} \bibentry{J. Kaplan et al.}{Scaling Laws for Neural Language Models}{arXiv:2001.08361}{2020}{https://arxiv.org/abs/2001.08361}
+\bibitem{bahri2021} \bibentry{Y. Bahri et al.}{Explaining Neural Scaling Laws}{JMLR}{2024}{https://arxiv.org/abs/2102.06701}
+\bibitem{caballero2022} \bibentry{E. Caballero et al.}{Broken Neural Scaling Laws}{arXiv:2210.14891}{2022}{https://arxiv.org/abs/2210.14891}
+\bibitem{brown2020} \bibentry{T. B. Brown et al.}{Language Models are Few-Shot Learners}{NeurIPS}{2020}{https://arxiv.org/abs/2005.14165}
+\bibitem{hoffmann2022} \bibentry{J. Hoffmann et al.}{Training Compute-Optimal Large Language Models}{NeurIPS}{2022}{https://doi.org/10.48550/arXiv.2203.15556}
+\bibitem{rae2021} \bibentry{J. W. Rae et al.}{Scaling Language Models: Methods, Analysis \& Insights from Training Gopher}{arXiv:2112.11446}{2021}{https://arxiv.org/abs/2112.11446}
+\bibitem{besiroglu2024} \bibentry{T. Besiroglu et al.}{Chinchilla Scaling: A Replication Attempt}{arXiv:2404.10102}{2024}{https://arxiv.org/abs/2404.10102}
+\bibitem{henighan2020} \bibentry{T. Henighan et al.}{Scaling Laws for Autoregressive Generative Modeling}{arXiv:2010.14701}{2020}{https://arxiv.org/abs/2010.14701}
+\bibitem{hernandez2021} \bibentry{D. Hernandez et al.}{Scaling Laws for Transfer}{arXiv:2102.01293}{2021}{https://arxiv.org/abs/2102.01293}
+\bibitem{openai2023gpt4} \bibentry{OpenAI}{GPT-4 Technical Report}{arXiv:2303.08774}{2023}{https://arxiv.org/abs/2303.08774}
+\bibitem{wei2022} \bibentry{J. Wei et al.}{Emergent Abilities of Large Language Models}{TMLR}{2022}{https://arxiv.org/abs/2206.07682}
+\bibitem{schaeffer2023} \bibentry{R. Schaeffer, B. Miranda, and S. Koyejo}{Are Emergent Abilities of Large Language Models a Mirage?}{NeurIPS}{2023}{https://arxiv.org/abs/2304.15004}
+\bibitem{muennighoff2023} \bibentry{N. Muennighoff et al.}{Scaling Data-Constrained Language Models}{arXiv:2305.16264}{2023}{https://arxiv.org/abs/2305.16264}
+\bibitem{deepseekllm2024} \bibentry{DeepSeek-AI et al.}{DeepSeek LLM: Scaling Open-Source Language Models with Longtermism}{arXiv:2401.02954}{2024}{https://arxiv.org/abs/2401.02954}
+\bibitem{datacomplm2024} \bibentry{J. Li et al.}{DataComp-LM: In Search of the Next Generation of Training Sets for Language Models}{arXiv:2406.11794}{2024}{https://arxiv.org/abs/2406.11794}
+\bibitem{datamixing2024} \bibentry{J. Ye et al.}{Data Mixing Laws: Optimizing Data Mixtures by Predicting Language Modeling Performance}{arXiv:2403.16952}{2024}{https://arxiv.org/abs/2403.16952}
+\bibitem{sardana2024} \bibentry{N. Sardana et al.}{Beyond Chinchilla-Optimal: Accounting for Inference in Language Model Scaling Laws}{ICML}{2024}{https://arxiv.org/abs/2401.00448}
+\bibitem{snell2024} \bibentry{C. Snell et al.}{Scaling LLM Test-Time Compute Optimally Can Be More Effective than Scaling Model Parameters}{arXiv:2408.03314}{2024}{https://arxiv.org/abs/2408.03314}
+\bibitem{biderman2023} \bibentry{S. Biderman et al.}{Pythia: A Suite for Analyzing Large Language Models Across Training and Scaling}{ICML}{2023}{https://arxiv.org/abs/2304.01373}
+\bibitem{cerebrasgpt2023} \bibentry{N. Dey et al.}{Cerebras-GPT: Open Compute-Optimal Language Models Trained on the Pile}{arXiv:2304.03208}{2023}{https://arxiv.org/abs/2304.03208}
+\bibitem{llama2023} \bibentry{H. Touvron et al.}{LLaMA: Open and Efficient Foundation Language Models}{arXiv:2302.13971}{2023}{https://arxiv.org/abs/2302.13971}
+\bibitem{llama2} \bibentry{H. Touvron et al.}{Llama 2: Open Foundation and Fine-Tuned Chat Models}{arXiv:2307.09288}{2023}{https://arxiv.org/abs/2307.09288}
+\bibitem{palm2022} \bibentry{A. Chowdhery et al.}{PaLM: Scaling Language Modeling with Pathways}{arXiv:2204.02311}{2022}{https://arxiv.org/abs/2204.02311}
+\bibitem{opt2022} \bibentry{S. Zhang et al.}{OPT: Open Pre-trained Transformer Language Models}{arXiv:2205.01068}{2022}{https://arxiv.org/abs/2205.01068}
+\bibitem{bloom2022} \bibentry{T. L. Scao et al.}{BLOOM: A 176B-Parameter Open-Access Multilingual Language Model}{arXiv:2211.05100}{2022}{https://arxiv.org/abs/2211.05100}
+\bibitem{falcon2023} \bibentry{E. Almazrouei et al.}{The Falcon Series of Open Language Models}{arXiv:2311.16867}{2023}{https://arxiv.org/abs/2311.16867}
+\bibitem{mixtral2024} \bibentry{A. Q. Jiang et al.}{Mixtral of Experts}{arXiv:2401.04088}{2024}{https://arxiv.org/abs/2401.04088}
+\bibitem{openelm2024} \bibentry{S. Mehta et al.}{OpenELM: An Efficient Language Model Family with Open Training and Inference Framework}{arXiv:2404.14619}{2024}{https://arxiv.org/abs/2404.14619}
+\bibitem{olmo2024} \bibentry{D. Groeneveld et al.}{OLMo: Accelerating the Science of Language Models}{arXiv:2402.00838}{2024}{https://arxiv.org/abs/2402.00838}
+\bibitem{llama31} \bibentry{Meta AI}{Introducing Llama 3.1: Our Most Capable Models to Date}{Official release}{2024}{https://ai.meta.com/blog/meta-llama-3-1/}
+\bibitem{qwen25} \bibentry{Qwen Team}{Qwen2.5 Technical Report}{arXiv:2412.15115}{2024}{https://arxiv.org/abs/2412.15115}
+\bibitem{qwen25coder} \bibentry{B. Hui et al.}{Qwen2.5-Coder Technical Report}{arXiv:2409.12186}{2024}{https://arxiv.org/abs/2409.12186}
+\bibitem{gemma1} \bibentry{Gemma Team}{Gemma: Open Models Based on Gemini Research and Technology}{arXiv:2403.08295}{2024}{https://arxiv.org/abs/2403.08295}
+\bibitem{gemma2} \bibentry{Gemma Team}{Gemma 2: Improving Open Language Models at a Practical Size}{arXiv:2408.00118}{2024}{https://arxiv.org/abs/2408.00118}
+\bibitem{deepseekv2} \bibentry{DeepSeek-AI et al.}{DeepSeek-V2: A Strong, Economical, and Efficient Mixture-of-Experts Language Model}{arXiv:2405.04434}{2024}{https://arxiv.org/abs/2405.04434}
+\bibitem{deepseekv3} \bibentry{DeepSeek-AI et al.}{DeepSeek-V3 Technical Report}{arXiv:2412.19437}{2024}{https://arxiv.org/abs/2412.19437}
+\bibitem{olmo2} \bibentry{Allen Institute for AI}{OLMo 2: The Best Fully Open Language Model to Date}{Official release}{2024}{https://allenai.org/olmo2}
+\bibitem{qwen3} \bibentry{Qwen Team}{Qwen3: Think Deeper, Act Faster}{Official technical blog}{2025}{https://qwenlm.github.io/blog/qwen3/}
+\bibitem{llama4} \bibentry{Meta AI}{The Llama 4 Herd: The Beginning of a New Era of Natively Multimodal AI Innovation}{Official release}{2025}{https://ai.meta.com/blog/llama-4-multimodal-intelligence/}
+\bibitem{gemma3} \bibentry{Google}{Gemma Models Documentation}{Official documentation; accessed 2026-08-07}{2025}{https://ai.google.dev/gemma/docs/get_started}
+\bibitem{longcatflash} \bibentry{LongCat Team}{LongCat-Flash Technical Report}{Official repository and technical report}{2025}{https://github.com/meituan-longcat/LongCat-Flash-Chat}
+\bibitem{longcat2} \bibentry{LongCat Team}{LongCat-2.0}{Official repository and technical blog; accessed 2026-08-07}{2026}{https://github.com/meituan-longcat/LongCat-2.0}
+\bibitem{kimik2} \bibentry{Kimi Team et al.}{Kimi K2: Open Agentic Intelligence}{arXiv:2507.20534}{2025}{https://arxiv.org/abs/2507.20534}
+\bibitem{kimik3} \bibentry{Kimi Team}{Kimi K3: Open Frontier Intelligence}{Official repository and technical report; accessed 2026-08-07}{2026}{https://github.com/MoonshotAI/Kimi-K3}
+\bibitem{glm5} \bibentry{Z.ai}{GLM-5: From Vibe Coding to Agentic Engineering}{Official repository and technical report; accessed 2026-08-07}{2026}{https://github.com/zai-org/GLM-5}
+\bibitem{gemma4} \bibentry{Google}{Gemma Models Documentation: Current Model Inventory}{Official documentation; accessed 2026-08-07}{2026}{https://ai.google.dev/gemma/docs/get_started}
+\bibitem{deepseekv4} \bibentry{DeepSeek}{DeepSeek-V4 Official Release}{Official release}{2026}{https://api-docs.deepseek.com/news/news260424/}
+\bibitem{claudefable5} \bibentry{Anthropic}{Claude Fable 5 \& Claude Mythos 5 System Card}{Official system card}{2026}{https://www-cdn.anthropic.com/2f9323abbcc4abe219577539efe19a623c9ca2bd/Claude\%20Fable\%205\%20\%26\%20Claude\%20Mythos\%205\%20System\%20Card.pdf}
+
+\end{thebibliography}
+
+\end{document}
