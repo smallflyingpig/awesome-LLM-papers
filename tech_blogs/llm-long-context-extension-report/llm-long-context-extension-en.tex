@@ -1,0 +1,324 @@
+% !TEX program = xelatex
+\documentclass[UTF8,10pt,a4paper,fontset=none]{ctexart}
+\usepackage[a4paper,left=19mm,right=19mm,top=18mm,bottom=19mm,headheight=14pt,headsep=7mm,footskip=10mm]{geometry}
+\usepackage{fontspec}
+\setmainfont{Times New Roman}
+\setsansfont{Arial}
+\setmonofont{Menlo}[Scale=0.86]
+\setCJKmainfont{Songti SC}
+\setCJKsansfont{Heiti SC}
+\setCJKmonofont{Songti SC}
+\usepackage{amsmath,amssymb,bm,booktabs,longtable,array,multirow,tabularx}
+\usepackage{graphicx,xcolor,hyperref,fancyhdr,titlesec,enumitem,caption,microtype}
+\definecolor{navy}{HTML}{17365D}
+\definecolor{blue}{HTML}{2459A6}
+\definecolor{pale}{HTML}{EAF1FB}
+\definecolor{linegray}{HTML}{D7DFEA}
+\hypersetup{colorlinks=true,linkcolor=navy,citecolor=blue,urlcolor=blue,bookmarksnumbered=true,
+  pdftitle={From 8K to 1M: Extending the Context Window of Large Language Models},
+  pdfauthor={Jiguo Li},pdfsubject={Position encoding, training recipes, attention systems, and evaluation}}
+\linespread{1.10}
+\setlength{\parindent}{1.5em}
+\setlength{\parskip}{3pt}
+\setlength{\abovedisplayskip}{6pt}
+\setlength{\belowdisplayskip}{6pt}
+\setlength{\jot}{3pt}
+\setlength{\emergencystretch}{2em}
+\setlist{nosep,leftmargin=2em,topsep=2pt,itemsep=1pt,parsep=0pt}
+\renewcommand{\arraystretch}{1.16}
+\captionsetup{font=small,labelfont=bf,labelsep=quad}
+\pagestyle{fancy}\fancyhf{}
+\fancyhead[L]{\small\color{gray}From 8K to 1M: Long-Context LLMs}
+\fancyhead[R]{\small\color{gray}\nouppercase{\leftmark}}
+\fancyfoot[C]{\small\color{gray}\thepage}
+\renewcommand{\headrulewidth}{0.3pt}
+\renewcommand{\sectionmark}[1]{\markboth{\thesection\quad #1}{}}
+\titleformat{\section}{\Large\bfseries\sffamily\color{navy}}{\thesection}{0.7em}{}
+\titleformat{\subsection}{\large\bfseries\sffamily\color{navy}}{\thesubsection}{0.65em}{}
+\titlespacing*{\section}{0pt}{14pt}{5pt}
+\titlespacing*{\subsection}{0pt}{10pt}{3pt}
+\newcommand{\key}[1]{\textbf{\color{navy}#1}}
+\newcommand{\boxtext}[1]{\begin{center}\fcolorbox{blue}{pale}{\parbox{0.92\textwidth}{#1}}\end{center}}
+\renewcommand{\abstractname}{Abstract}
+\renewcommand{\contentsname}{Contents}
+\renewcommand{\refname}{References}
+
+\begin{document}
+\markboth{}{}
+\begin{center}
+  {\fontsize{24}{29}\selectfont\bfseries\sffamily\color{navy}From 8K to 1M:\par Extending the Context Window of Large Language Models\par}
+  \vspace{5pt}
+  {\Large\sffamily\color{navy}Position Encoding, Training Recipes, Attention Systems, and Evaluation\par}
+  \vspace{8pt}
+  {\normalsize\textbf{Jiguo Li\footnote{Prepared with assistance from Codex.}}}\par
+  \vspace{2pt}
+  {\small\href{mailto:jiguolee@gmail.com}{jiguolee@gmail.com}}\par
+  \vspace{4pt}
+  {\small Research and revision date: August 9, 2026}\par
+\end{center}
+\vspace{5pt}
+{\color{navy}\hrule height 0.6pt}
+\vspace{7pt}
+
+\begin{abstract}
+A reliable long-context language model cannot be obtained by merely increasing a configuration value. Four conditions must hold simultaneously: positional representations must remain numerically stable beyond the training length; the model must learn to retrieve, integrate, and reason over distant evidence; attention computation, KV-cache management, communication, and scheduling must remain affordable; and evaluation must distinguish an accepted input from context that the model can actually use. This report develops a unified account of absolute and relative positions, RoPE, ALiBi, positional interpolation, NTK-aware scaling, YaRN, and LongRoPE. It then explains the engineering progression from 8K to 16K, 32K, 256K, and 1M tokens; connects the algorithms to Hugging Face Transformers, Megatron Core, FlashAttention, context parallelism, and modern serving systems; and provides concrete recipes for continued pre-training, long-context instruction tuning, data construction, and evaluation. Recent developments in native sparse attention, hybrid linear attention, DeepSeek Sparse Attention, Kimi Linear, and million-token multimodal and agent models are used to identify the next research frontier. The central claim is that positional extension supplies a coordinate system, long-sequence training creates usable capability, and systems optimization makes that capability deployable.
+\end{abstract}
+
+\noindent\textbf{Keywords:} large language models; long context; position encoding; RoPE; YaRN; LongRoPE; sparse attention; context parallelism
+
+\boxtext{\textbf{Reading guide.} Position scaling answers whether coordinates can be extended; long-sequence training answers whether the model can use them; efficient attention and KV systems answer whether the cost can be sustained. A nominal context window becomes an effective context window only when all three conditions hold.}
+
+\clearpage
+\begingroup
+\fancyhead[R]{}
+\begin{center}{\Large\bfseries\sffamily\color{navy}Contents}\end{center}
+\vspace{4pt}
+\footnotesize\setlength{\parskip}{0pt}\linespread{1.0}\selectfont
+\setcounter{tocdepth}{2}\tableofcontents
+\endgroup
+\clearpage
+
+\section{What Does It Mean to Extend Context?}
+
+Let the sequence length be $N$ and the hidden dimension be $d$. Standard causal self-attention is
+\begin{equation}
+\operatorname{Attn}(Q,K,V)=\operatorname{softmax}\!\left(\frac{QK^\top}{\sqrt{d_h}}+M\right)V,
+\end{equation}
+where $M$ is the causal mask. Attention has no intrinsic representation of token order, so position must be injected explicitly. Dense attention requires $O(N^2d)$ arithmetic and an explicit score matrix of size $O(N^2)$. Autoregressive inference avoids recomputation by caching keys and values, but the KV cache still grows linearly with $N$.
+
+A statement such as ``the model supports $L$ tokens'' may mean four different things: the API accepts an input of length $L$; the positional function remains finite; perplexity remains acceptable; or the model can reliably retrieve and reason with evidence placed anywhere in the window. These levels must not be conflated.
+
+\begin{table}[htbp]
+\centering\small
+\caption{Quadratic scale of dense attention, excluding layers and heads}
+\begin{tabular}{lrrr}
+\toprule
+Context & $N$ & $N^2$ elements & Relative to 8K\\
+\midrule
+8K & 8,192 & 67.1 million & 1\\
+16K & 16,384 & 268 million & 4\\
+32K & 32,768 & 1.07 billion & 16\\
+256K & 262,144 & 68.7 billion & 1,024\\
+1M & 1,048,576 & 1.10 trillion & 16,384\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Position Encoding Foundations}
+
+\subsection{Absolute positions}
+The original Transformer uses fixed sinusoidal encodings\cite{vaswani2017}:
+\begin{align}
+PE_{(p,2i)}&=\sin(p/10000^{2i/d}),\\
+PE_{(p,2i+1)}&=\cos(p/10000^{2i/d}),
+\end{align}
+and adds them to token embeddings. The formula is defined at arbitrary positions, but mathematical availability does not imply learned extrapolation. Learned absolute embeddings are flexible within their table, yet positions beyond the trained table are undefined or untrained.
+
+Relative schemes inject a function of displacement $m-n$ into the score or value. Transformer-XL combines segment recurrence with a relative positional decomposition\cite{dai2019transformerxl}. ALiBi instead subtracts a head-specific linear distance penalty from the score\cite{press2021}:
+\begin{equation}
+s^{(h)}_{mn}=\frac{q_m^\top k_n}{\sqrt{d_h}}-a_h(m-n),\qquad n\le m.
+\end{equation}
+Its simplicity enables some train-short-test-long behavior, although a strong recency bias may suppress distant evidence.
+
+\subsection{RoPE and its frequency spectrum}
+RoPE was formalized in RoFormer\cite{su2021}. In each two-dimensional subspace it rotates queries and keys by
+\begin{equation}
+R(p,\theta_i)=\begin{bmatrix}\cos(p\theta_i)&-\sin(p\theta_i)\\
+\sin(p\theta_i)&\cos(p\theta_i)\end{bmatrix},\qquad \theta_i=b^{-2i/d_h}.
+\end{equation}
+With $q_p=R(p)W_qx_p$ and $k_m=R(m)W_kx_m$,
+\begin{equation}
+q_p^\top k_m=(W_qx_p)^\top R(m-p)(W_kx_m),
+\end{equation}
+so the positional component of the dot product depends on relative displacement. RoPE needs no lookup table and is easy to modify through positions or frequencies, which explains its central role in context extension.
+
+The risk is spectral mismatch. High-frequency dimensions rotate rapidly and encounter unseen phase combinations beyond the training window; low-frequency dimensions may not complete a cycle during pre-training. Uniformly stretching all dimensions sacrifices local resolution, whereas unmodified extrapolation can become unstable.
+
+\section{Core Methods for Extending RoPE}
+
+\subsection{Extrapolation, interpolation, and frequency-aware scaling}
+Let $L_0$ be the pre-training length and $L_1=sL_0$ the target. Direct extrapolation evaluates unseen positions $p>L_0$. Position Interpolation instead uses
+\begin{equation}p'=p/s,
+\end{equation}
+mapping $[0,L_1)$ into the trained interval $[0,L_0)$. PI extended RoPE-based LLaMA models to 32K with limited fine-tuning and was more stable than direct extrapolation\cite{chen2023pi}. The trade-off is uniform distance compression, including reduced angular separation between adjacent tokens.
+
+NTK-aware methods reparameterize the RoPE base or per-dimension frequencies so that high-frequency dimensions preserve local patterns while low-frequency dimensions carry longer scales. Dynamic variants select the amount of scaling from the actual input length. Because community implementations differ, a reproducible report must record the exact formula, base, factor, original window, and library version.
+
+\subsection{YaRN and LongRoPE}
+YaRN divides dimensions by the number of rotations observed in the original window. Well-trained high frequencies are interpolated, slowly rotating frequencies are preserved, and the transition band is blended. Attention scaling corrects the entropy shift induced by context extension. YaRN reports lower fine-tuning cost and extension to 128K\cite{peng2023yarn}.
+
+LongRoPE searches non-uniform factors across RoPE dimensions and treats early tokens separately. It first fine-tunes to 256K, then applies a second interpolation to the extended model. Experiments on LLaMA2 and Mistral report up to 2,048K, followed by short-context readjustment to recover original-window quality\cite{ding2024longrope}. This result supports progressive migration rather than a single 128-fold compression from 8K to 1M.
+
+\subsection{Beyond position scaling}
+RoPE extension does not remove quadratic attention. Native Sparse Attention (NSA) combines a compressed global branch, query-dependent token selection, and a local window, and is trained natively with a hardware-aligned sparse kernel\cite{yuan2025nsa}. Kimi Linear takes a different path: Kimi Delta Attention maintains a gated recurrent state, while periodic global MLA layers restore precise access to selected history\cite{kimiLinear}.
+
+Three families therefore coexist: extended dense attention, which is easiest to retrofit but most expensive; natively trained sparse attention, which reduces selected connections but requires routing and specialized kernels; and hybrid linear attention, which compresses history into fixed-size state and retains occasional global layers. Retrofitting favors the first path, whereas new pre-training projects targeting million-token operation may justify the latter two.
+
+\section{An Engineering Roadmap from 8K to 1M}
+
+\subsection{8K to 16K}
+At only $2\times$ extension, linear PI, a base-frequency change, or dynamic RoPE scaling often provides a good initialization. Short continued pre-training on a mixture of short and long examples adapts the distance distribution. Short examples must remain in the batch to prevent regression. FlashAttention plus activation checkpointing is usually sufficient at this scale.
+
+\subsection{16K to 32K}
+Uniform interpolation increasingly harms local resolution. Frequency-aware scaling such as YaRN should be paired with genuine long documents, cross-section retrieval, and multi-evidence synthetic examples. The small number of steps reported by PI is evidence of feasibility, not a universal training constant.
+
+\subsection{32K to 256K}
+Position changes alone are no longer enough. A length curriculum such as 32K $\rightarrow$ 64K $\rightarrow$ 128K $\rightarrow$ 256K, length buckets, and mixed short/long data become important. FlashAttention avoids materializing the score matrix\cite{dao2022flash}; FlashAttention-2 further improves GPU work partitioning\cite{dao2023flash2}. Exact attention remains quadratic. Longformer, BigBird, and LongNet reduce cost with local/global, block-sparse, or dilated patterns\cite{beltagy2020longformer,zaheer2020bigbird,ding2023longnet}, but change the information path.
+
+\subsection{256K to 1M}
+An 8K-to-1M extension expands coordinates by $128\times$ and the score matrix by $16{,}384\times$. A practical plan combines non-uniform frequency search, progressive training through 128K or 256K, context parallelism, blockwise attention with overlapped communication, GQA or MQA, lower-precision or quantized KV, paged allocation, prefix reuse, and evaluation at both extreme and original lengths. Ring Attention circulates KV blocks across a device ring and scales the feasible sequence approximately with device count\cite{liu2023ring}.
+
+\begin{table}[htbp]
+\centering\small
+\caption{Recommended combinations by target length}
+\begin{tabularx}{\textwidth}{p{1.5cm}p{3cm}X X}
+\toprule
+Target & Position method & Training and system focus & Main risk\\
+\midrule
+16K & PI / dynamic scaling & brief CPT; short-long mixture; FlashAttention & local-resolution loss\\
+32K & YaRN / NTK-aware & retrieval and multi-evidence data; length buckets & middle/late-position failures\\
+256K & non-uniform scaling & progressive CPT; context parallelism; efficient attention & cost growth and short-task regression\\
+1M & staged LongRoPE-like extension & distributed/blockwise attention; KV optimization; extreme-length tests & accepted but unusable context\\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{Connecting Algorithms to Implementations}
+
+\subsection{Hugging Face Transformers}
+Transformers exposes RoPE variants through model configuration. Supported types include \texttt{default}, \texttt{linear}, \texttt{dynamic}, \texttt{yarn}, \texttt{longrope}, and \texttt{llama3}\cite{hfrope}. The configuration, original length, attention factor, and per-dimension factors should travel with the checkpoint. Increasing \texttt{max\_position\_embeddings} alone neither changes the RoPE spectrum nor creates long-context capability.
+
+Transformers is appropriate for validating positional schemes and for small or medium CPT/SFT runs. FlashAttention-2 or SDPA, gradient checkpointing, and length-aware sampling reduce waste. LongLoRA combines shifted sparse attention with parameter-efficient adaptation during training while retaining dense inference\cite{chen2023longlora}. At very long lengths, Transformers commonly needs DeepSpeed, FSDP, or a Megatron-style context-parallel backend.
+
+\subsection{Megatron Core}
+Megatron-LM composes tensor, pipeline, and data parallelism\cite{narayanan2021megatron}. Context parallelism adds the sequence dimension: each rank stores approximately $N/C$ tokens of activations and exchanges KV blocks during attention\cite{megatroncp}. Sequence parallelism is narrower: it partitions LayerNorm, Dropout, and similar non-attention activations within a tensor-parallel group. Context parallelism partitions all inputs and activations. GQA and MQA reduce KV communication because they use fewer KV heads\cite{ainslie2023gqa}.
+
+Causal attention creates load imbalance because later queries attend to more keys. Zigzag or paired head-tail chunking balances triangular work. The context-parallel degree must be selected jointly with sequence length, topology, and link bandwidth; excessive partitioning makes communication dominant.
+
+\begin{table}[htbp]
+\centering\small
+\caption{Research concepts and implementation points}
+\begin{tabularx}{\textwidth}{p{2cm}X X}
+\toprule
+Range & Transformers & Megatron / serving stack\\
+\midrule
+8K--16K & RoPE parameters; SDPA/FlashAttention & TP/DP; activation checkpointing\\
+16K--32K & YaRN/dynamic scaling; length grouping & sequence parallelism; optional CP\\
+32K--256K & LongRoPE/Llama3 configuration; packed datasets & CP+TP+PP; FlashAttention; zigzag partitioning\\
+256K--1M & model-specific sparse or hybrid implementation & hierarchical CP/Ring; paged or compressed KV; chunked prefill\\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{Training: From Valid Coordinates to Usable Capability}
+
+\subsection{Continued pre-training data}
+Randomly concatenating short documents creates long sequences, not long dependencies. Useful data includes complete narratives, multi-document topic clusters, cross-section QA, distant entity consistency, multi-hop evidence, and retrieval with hard distractors. A data record should track effective dependency distance, not only token count. Data-engineering experiments suggest that roughly 0.5B--5B high-quality CPT tokens can extend models toward 128K, but domain balance matters as much as long-document upsampling\cite{fu2024data}.
+
+A practical pipeline has eight stages:
+\begin{enumerate}
+\item parse documents while preserving hierarchy, page numbers, repository paths, and time;
+\item filter language, malformed text, templates, low quality, private information, and licensing risks;
+\item deduplicate paragraphs, neighboring sections, and whole documents;
+\item tokenize with the final tokenizer and annotate length, domain, integrity, and potential dependency distance;
+\item sample jointly over domain and length buckets such as 0--8K, 8--32K, 32--128K, and 128--256K;
+\item preserve natural boundaries, window oversized documents by section, and block cross-document attention in packed data;
+\item synthesize passkeys, multi-key aggregation, variable chains, and conflicting evidence at controlled depths;
+\item decontaminate by document and repository before window generation.
+\end{enumerate}
+
+One starting mixture is 35\% short text, 25\% at 8--32K, 25\% at 32--128K, and 15\% at 128--256K, balanced by domain inside every bucket. Budgets should be measured in tokens, not examples. LongAlign reports that sorted batching, packing, and sequence-level loss weighting improve variable-length SFT efficiency and balance\cite{bai2024longalign}.
+
+\subsection{Long-context SFT}
+Instruction data should cover locating, integrating, computing, writing, and citing. Entities, numbers, and section relations can be extracted automatically; a teacher model generates questions and answers; deterministic programs then verify evidence spans, numerical answers, and citations. Teacher self-judgment alone can propagate hallucinations.
+
+Multi-document tasks should place two to five necessary facts across documents and depths, add semantically similar distractors or conflicts, and require evidence identifiers. Questions answerable from world knowledge without reading the context should be removed. Code tasks can be generated from repository call graphs, configuration flow, and real cross-file defects, with splits made at repository level.
+
+Standard SFT often masks prompt-token loss and trains only assistant outputs. Long inputs therefore receive supervision mainly through gradients from the answer. Auxiliary evidence-location and citation targets help. Sequence-normalized loss prevents a single 100K example from dominating many short examples merely because it contains more tokens.
+
+\section{Inference and Serving at Million-Token Scale}
+
+Prefill and decoding have different bottlenecks. Prefill processes all prompt tokens and dense attention grows quadratically. Decoding reads historical KV for every new token and is commonly bandwidth-bound. FlashAttention chiefly improves prefill IO and intermediate memory, whereas GQA/MQA, KV quantization, paging, and tiered storage reduce decoding pressure.
+
+For $L$ layers and $n_{kv}$ KV heads of dimension $d_h$, the cache is approximately
+\begin{equation}
+\operatorname{KVBytes}\approx N\,L\,2n_{kv}d_hb,
+\end{equation}
+where $b$ is bytes per element. Moving from 256K to 1M multiplies KV capacity by four. PagedAttention manages non-contiguous KV blocks and prefix sharing to reduce fragmentation\cite{kwon2023pagedattention}. Mooncake disaggregates prefill and decoding around KV transfer and reuse, illustrating a shift toward KV-centric service design\cite{qin2024moonlight}.
+
+Dense attention gives every token pair a direct path but has the highest cost. Sliding-window and block-sparse patterns are cheaper but can weaken exact distant retrieval. RAG performs selection outside the model and is auditable, but retrieval errors discard evidence before inference. In practice, coarse retrieval, long-context reading, and citation validation are complementary. StreamingLLM preserves attention sinks and a recent window to support stable indefinite generation under a fixed cache budget\cite{xiao2023streamingllm}; it is a streaming-memory method, not full access to an unlimited past.
+
+\section{Evaluation: Capacity Is Not Capability}
+
+Evaluation should progress through four levels: numerical stability and length-wise perplexity; single-needle or passkey retrieval; multi-evidence, multi-hop, and aggregation tasks; and realistic document, repository, dialogue, or multimodal tasks. Lost in the Middle shows that evidence placed near the center can be harder to use than evidence at the beginning or end even within the nominal window\cite{liu2023lostmiddle}.
+
+RULER adds multi-needle, tracing, and aggregation tasks and finds that nominal length substantially overstates effective length for many models\cite{hsieh2024ruler}. $\infty$Bench extends bilingual evaluation beyond an average of 100K tokens\cite{zhang2024infinitebench}. LongBench v2 covers long-document and multi-document QA, long in-context learning, dialogue history, code repositories, and structured data, with source material extending from 8K to roughly two million words\cite{bai2024longbenchv2}.
+
+A useful test cube varies input length and relative evidence position, task complexity, and system budget such as sparsity or KV capacity. Evidence retrieval and reasoning correctness should be scored separately. Every million-token claim should name the checkpoint, tokenizer, position parameters, attention semantics, hardware, data type, latency, memory, and position-depth heat map.
+
+\section{Evidence from Major Model Reports}
+
+Llama 3 extends public dense models to 128K and combines a dedicated RoPE configuration, long-sequence training, post-training, and GQA\cite{llama3}. Gemini 1.5 demonstrates million-token multimodal context over text, code, audio, and video, but its undisclosed internal mechanisms should not be inferred from public benchmarks\cite{gemini15}.
+
+Qwen2.5-1M publishes one of the most complete open million-token pipelines: long-data synthesis, progressive pre-training, multi-stage SFT, extrapolation, sparse attention, sparsity refinement, chunked prefill, and kernel, pipeline, and scheduler optimization. It reports a 3--7$\times$ prefill speedup at one million tokens\cite{qwen1m}. DeepSeek-V3.2 moves query-dependent sparse selection into model training through DeepSeek Sparse Attention\cite{deepseekv32}. Kimi Linear combines KDA state updates with periodic global MLA, and Kimi K3 connects one-million-token context with native multimodality and long-horizon agent reinforcement learning\cite{kimiLinear,kimiK3}.
+
+The progression is therefore not simply 8K, 32K, 128K, and 1M. It moves from stable extrapolation, to long-data adaptation, to deployable sparse or stateful attention, and finally to persistent multimodal and agent memory.
+
+\section{Open Problems and Research Directions}
+
+\subsection{Effective length and positional theory}
+Effective context is often much shorter than advertised context. Benchmarks need confidence intervals over position, complexity, and distractor strength. RoPE scaling still depends on empirical bases, frequency boundaries, attention temperatures, and short/long factors. A unified theory should derive these choices from model dimension, training length, and data statistics, or learn constrained transformations without destroying the original function.
+
+\subsection{Retrieval, reasoning, and sparse routing}
+Finding evidence is not the same as composing it. Models may copy a needle but fail at variable binding, temporal consistency, and global constraints over 100K tokens. Sparse routing adds another failure mode: missed evidence becomes invisible. Training should expose evidence graphs, citations, state changes, and uncertainty, while evaluations must rule out local shortcuts and measure router recall.
+
+\subsection{State, KV governance, and long-horizon agents}
+Million-token KV is both a capacity problem and a governance problem involving reuse, tenant isolation, eviction, compression, and privacy. Future work must determine which states can be quantized, merged, or forgotten, how task-aware error is controlled, and how sensitive prefixes are cached safely. Long-running agents additionally require selective writing, forgetting, conflict resolution, and auditability. A likely architecture combines precise short-term context, compressed long-term state, and external retrievable memory.
+
+\subsection{Economics and sustainability}
+Long windows raise prefill energy, time to first token, and serving cost. Reports should publish quality, GPU-hours, energy, peak memory, and cost per million processed tokens, and compare dense context, sparse models, RAG, and hierarchical summarization on a Pareto frontier. The useful target is not the largest advertised window, but the amount of context that can be used reliably under a defined cost budget.
+
+\section{Conclusion}
+
+Long-context extension exposes three bottlenecks in sequence: stable positional extrapolation, learned long-range capability, and system affordability. Extending 8K to 32K can often rely on RoPE scaling and limited training. Reaching 256K requires frequency-aware methods, long-data engineering, and memory-efficient or distributed attention. Reaching 1M requires progressive extension, context-parallel systems, KV management, and rigorous evaluation. Since 2025, NSA, DSA, and Kimi Linear indicate a further shift: the frontier is moving from stretching dense attention toward sparse or stateful long-range memory trained as part of the base architecture.
+
+Engineering acceptance should separately verify that the interface accepts the input, numerics remain stable, evidence is retrievable, reasoning is correct, and cost is acceptable. A million-token number is a real capability only when position encoding, training data, system implementation, and evaluation all agree.
+
+\begin{thebibliography}{99}\small
+\bibitem{vaswani2017} A. Vaswani et al. \textit{Attention Is All You Need}. NeurIPS, 2017. \url{https://arxiv.org/abs/1706.03762}
+\bibitem{su2021} J. Su et al. \textit{RoFormer: Enhanced Transformer with Rotary Position Embedding}. 2021. \url{https://arxiv.org/abs/2104.09864}
+\bibitem{press2021} O. Press, N. A. Smith, M. Lewis. \textit{Train Short, Test Long: Attention with Linear Biases Enables Input Length Extrapolation}. ICLR, 2022. \url{https://arxiv.org/abs/2108.12409}
+\bibitem{chen2023pi} S. Chen et al. \textit{Extending Context Window of Large Language Models via Positional Interpolation}. 2023. \url{https://arxiv.org/abs/2306.15595}
+\bibitem{peng2023yarn} B. Peng et al. \textit{YaRN: Efficient Context Window Extension of Large Language Models}. ICLR, 2024. \url{https://arxiv.org/abs/2309.00071}
+\bibitem{ding2024longrope} Y. Ding et al. \textit{LongRoPE: Extending LLM Context Window Beyond 2 Million Tokens}. ICML, 2024. \url{https://arxiv.org/abs/2402.13753}
+\bibitem{dao2022flash} T. Dao et al. \textit{FlashAttention: Fast and Memory-Efficient Exact Attention with IO-Awareness}. NeurIPS, 2022. \url{https://arxiv.org/abs/2205.14135}
+\bibitem{dao2023flash2} T. Dao. \textit{FlashAttention-2: Faster Attention with Better Parallelism and Work Partitioning}. 2023. \url{https://arxiv.org/abs/2307.08691}
+\bibitem{liu2023ring} H. Liu, M. Zaharia, P. Abbeel. \textit{Ring Attention with Blockwise Transformers for Near-Infinite Context}. 2023. \url{https://arxiv.org/abs/2310.01889}
+\bibitem{dai2019transformerxl} Z. Dai et al. \textit{Transformer-XL: Attentive Language Models Beyond a Fixed-Length Context}. ACL, 2019. \url{https://arxiv.org/abs/1901.02860}
+\bibitem{beltagy2020longformer} I. Beltagy, M. E. Peters, A. Cohan. \textit{Longformer: The Long-Document Transformer}. 2020. \url{https://arxiv.org/abs/2004.05150}
+\bibitem{zaheer2020bigbird} M. Zaheer et al. \textit{Big Bird: Transformers for Longer Sequences}. NeurIPS, 2020. \url{https://arxiv.org/abs/2007.14062}
+\bibitem{ding2023longnet} J. Ding et al. \textit{LongNet: Scaling Transformers to 1,000,000,000 Tokens}. 2023. \url{https://arxiv.org/abs/2307.02486}
+\bibitem{ainslie2023gqa} J. Ainslie et al. \textit{GQA: Training Generalized Multi-Query Transformer Models from Multi-Head Checkpoints}. EMNLP, 2023. \url{https://arxiv.org/abs/2305.13245}
+\bibitem{hfrope} Hugging Face. \textit{Utilities for Rotary Embedding}. Transformers Documentation. \url{https://huggingface.co/docs/transformers/internal/rope_utils}
+\bibitem{narayanan2021megatron} D. Narayanan et al. \textit{Efficient Large-Scale Language Model Training on GPU Clusters Using Megatron-LM}. SC, 2021. \url{https://arxiv.org/abs/2104.04473}
+\bibitem{megatroncp} NVIDIA. \textit{Megatron Core Context Parallel Package}. Developer Guide. \url{https://docs.nvidia.com/megatron-core/developer-guide/latest/user-guide/features/context_parallel.html}
+\bibitem{chen2023longlora} Y. Chen et al. \textit{LongLoRA: Efficient Fine-tuning of Long-Context Large Language Models}. ICLR, 2024. \url{https://arxiv.org/abs/2309.12307}
+\bibitem{fu2024data} Y. Fu et al. \textit{Data Engineering for Scaling Language Models to 128K Context}. ICML, 2024. \url{https://arxiv.org/abs/2402.10171}
+\bibitem{bai2024longalign} Y. Bai et al. \textit{LongAlign: A Recipe for Long Context Alignment of Large Language Models}. ACL, 2024. \url{https://arxiv.org/abs/2401.18058}
+\bibitem{kwon2023pagedattention} W. Kwon et al. \textit{Efficient Memory Management for Large Language Model Serving with PagedAttention}. SOSP, 2023. \url{https://arxiv.org/abs/2309.06180}
+\bibitem{xiao2023streamingllm} G. Xiao et al. \textit{Efficient Streaming Language Models with Attention Sinks}. ICLR, 2024. \url{https://arxiv.org/abs/2309.17453}
+\bibitem{qin2024moonlight} Q. Qin et al. \textit{Mooncake: A KVCache-centric Disaggregated Architecture for LLM Serving}. FAST, 2025. \url{https://arxiv.org/abs/2407.00079}
+\bibitem{liu2023lostmiddle} N. F. Liu et al. \textit{Lost in the Middle: How Language Models Use Long Contexts}. TACL, 2024. \url{https://arxiv.org/abs/2307.03172}
+\bibitem{hsieh2024ruler} C.-P. Hsieh et al. \textit{RULER: What's the Real Context Size of Your Long-Context Language Models?}. COLM, 2024. \url{https://arxiv.org/abs/2404.06654}
+\bibitem{zhang2024infinitebench} X. Zhang et al. \textit{$\infty$Bench: Extending Long Context Evaluation Beyond 100K Tokens}. ACL, 2024. \url{https://arxiv.org/abs/2402.13718}
+\bibitem{bai2024longbenchv2} Y. Bai et al. \textit{LongBench v2: Towards Deeper Understanding and Reasoning on Realistic Long-context Multitasks}. 2024. \url{https://arxiv.org/abs/2412.15204}
+\bibitem{llama3} A. Grattafiori et al. \textit{The Llama 3 Herd of Models}. 2024. \url{https://arxiv.org/abs/2407.21783}
+\bibitem{gemini15} Gemini Team. \textit{Gemini 1.5: Unlocking Multimodal Understanding across Millions of Tokens of Context}. 2024. \url{https://arxiv.org/abs/2403.05530}
+\bibitem{qwen1m} A. Yang et al. \textit{Qwen2.5-1M Technical Report}. 2025. \url{https://arxiv.org/abs/2501.15383}
+\bibitem{yuan2025nsa} J. Yuan et al. \textit{Native Sparse Attention: Hardware-Aligned and Natively Trainable Sparse Attention}. 2025. \url{https://arxiv.org/abs/2502.11089}
+\bibitem{deepseekv32} DeepSeek-AI. \textit{DeepSeek-V3.2: Pushing the Frontier of Open Large Language Models}. 2025. \url{https://arxiv.org/abs/2512.02556}
+\bibitem{kimiLinear} Kimi Team. \textit{Kimi Linear: An Expressive, Efficient Attention Architecture}. 2025. \url{https://arxiv.org/abs/2510.26692}
+\bibitem{kimiK3} Kimi Team. \textit{Kimi K3: Open Frontier Intelligence}. 2026. \url{https://arxiv.org/abs/2607.24653}
+\end{thebibliography}
+
+\end{document}
