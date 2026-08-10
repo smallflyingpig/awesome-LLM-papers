@@ -147,12 +147,52 @@ Code Agent 不是在代码语言模型上附加一个 ReAct 循环，而是由�
 \begin{center}
   {\Large\bfseries\color{Navy} 目录}
 \end{center}
-\vspace{5pt}
-{\footnotesize\setstretch{0.98}\setlength{\parskip}{0pt}\tableofcontents}
+\vspace{3pt}
+{\footnotesize\setstretch{0.94}\setlength{\parskip}{0pt}\tableofcontents}
 
 \clearpage
 \endgroup
 
+\section*{符号与约定}
+\addcontentsline{toc}{section}{符号与约定}
+\markboth{符号与约定}{}
+
+本页集中解释全文反复使用的符号；局部专用量仍会在首次出现处定义。下标 $t$ 通常表示 episode 内的时间步，$i,j$ 表示样本、位置或工具索引，$\theta,\phi$ 表示可学习参数。
+
+\begingroup
+\small
+\setlength{\tabcolsep}{4pt}
+\renewcommand{\arraystretch}{1.12}
+\noindent
+\begin{tabularx}{\textwidth}{p{4.5cm}Yp{1.55cm}}
+\toprule
+\textbf{符号} & \textbf{含义} & \textbf{主要章节} \\
+\midrule
+\shortstack[l]{$\mathcal{T}_j=(n_j,d_j,\Sigma_j^{\mathrm{in}},$\\$P_j,\Delta_j,\Sigma_j^{\mathrm{out}})$}
+& 第 $j$ 个工具契约：名称、描述、输入 schema、权限/作用域、执行预算与输出 schema。 & 1.1 \\
+$s_t,o_t,a_t,h_t,\pi_\theta,\tau$
+& 状态、observation、action、历史、参数为 $\theta$ 的策略，以及完整交互轨迹（episode）。 & 1.1--1.2 \\
+$M,S,H,E,V,B,\xi$；$Y$
+& 模型 checkpoint、scaffold/prompt、Harness、环境、verifier、预算、随机性；$Y$ 为端到端结果。 & 1.4、5 \\
+$x_i,x_{i,<t},m_{i,t},p_\theta,w_d,q_i,T$
+& 训练样本及其前缀、loss mask、token 条件概率、数据域权重、样本质量分和采样温度。 & 2 \\
+$\tilde{x},x_{<l},x_{l:r},x_{>r}$；$L,n_{\mathrm{layer}},d_{\mathrm{kv}}$
+& FIM 重排及被挖空区间；序列长度、层数与每层 KV 维度（用于长上下文复杂度估算）。 & 2.3--3 \\
+$m,i,b,d,\theta_i,\phi_i(m)$
+& RoPE 的位置、频率维索引、基数、隐藏维度、第 $i$ 维频率与位置相位。 & 3.2 \\
+\shortstack[l]{$v(\tau),r_{\mathrm{exec}},r_{\mathrm{progress}}$\\$d_{\mathrm{novelty}},c_{\mathrm{tokens}},r_{\mathrm{risk}}$}
+& 轨迹价值及其可执行性、进展、新颖性、token 成本和风险分量；$\alpha,\beta,\gamma,\delta,\eta$ 为组合权重。 & 4.2 \\
+\shortstack[l]{$\mathbf r(\tau),R_{\mathrm{task}},C,R_{\mathrm{risk}}$\\$s_\phi(\tau,P),\widehat{\mathrm{pass@}k}$}
+& RL 奖励向量、任务收益、成本、风险惩罚、verifier 对轨迹与 patch 的评分，以及从 $n$ 次采样中 $c$ 次成功估计的 pass@$k$。 & 6--7 \\
+\bottomrule
+\end{tabularx}
+\endgroup
+
+\begin{keybox}[重载符号与缩写]
+\hspace{0.3em}$d_j$ 是工具描述，$d$ 也可表示数据域或隐藏维度；$P_j$ 是工具权限，$P$ 是候选 patch，$P_\phi$ 是概率；$T$ 是采样温度，$\mathcal{T}$ 是工具集合中的元素。它们由上下标与上下文区分。常用缩写包括 NTP（next-token prediction）、FIM（fill-in-the-middle）、SFT、DPO、RL/RLVR、ACI（Agent--Computer Interface）、F2P（fail-to-pass）和 P2P（pass-to-pass）。
+\end{keybox}
+
+\clearpage
 \section{问题定义：从工具调用到 Code Agent 能力栈}
 
 \subsection{工具调用：把文本预测变成受控动作}
